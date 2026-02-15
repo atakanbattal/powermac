@@ -35,7 +35,7 @@ export function Sidebar({ profile }: SidebarProps) {
     <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 h-screen">
       {/* Logo */}
       <div className="h-16 flex items-center px-6 border-b border-slate-100 dark:border-slate-800">
-        <Link href="/" className="flex items-center gap-2 text-blue-600 font-bold text-xl tracking-tight">
+        <Link href="/bom" className="flex items-center gap-2 text-blue-600 font-bold text-xl tracking-tight">
           <Cog className="w-6 h-6" />
           <span>PowerMac</span>
         </Link>
@@ -45,9 +45,7 @@ export function Sidebar({ profile }: SidebarProps) {
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {NAV_ITEMS.map((item) => {
           const Icon = iconMap[item.icon] || LayoutDashboard
-          const isActive = item.href === '/' 
-            ? pathname === '/' 
-            : pathname.startsWith(item.href)
+          const isActive = pathname.startsWith(item.href)
 
           return (
             <Link

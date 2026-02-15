@@ -111,7 +111,7 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
   const handleMaterialSelect = (materialId: string) => {
     setSelectedMaterialId(materialId)
     const plan = materialPlans.find(p => p.material_id === materialId)
-    if (plan) {
+    if (plan && plan.control_plan_items.length > 0) {
       setInspPlan(plan)
       setMeasurements(
         Object.fromEntries(plan.control_plan_items.map(item => [
@@ -127,10 +127,24 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
 
   const startInspection = (entry?: StockEntry) => {
     if (entry?.material) {
-      setSelectedMaterialId(entry.material.id)
+      const matId = entry.material.id
+      setSelectedMaterialId(matId)
       setSelectedEntryId(entry.id)
       setInspQty(String(entry.quantity))
-      handleMaterialSelect(entry.material.id)
+      // Plan bul ve set et
+      const plan = materialPlans.find(p => p.material_id === matId)
+      if (plan && plan.control_plan_items.length > 0) {
+        setInspPlan(plan)
+        setMeasurements(
+          Object.fromEntries(plan.control_plan_items.map(item => [
+            item.id,
+            { control_plan_item_id: item.id, measured_value: '', result: 'beklemede' as InspectionResult },
+          ]))
+        )
+      } else {
+        setInspPlan(null)
+        setMeasurements({})
+      }
     }
     setInspMode(true)
   }
@@ -414,13 +428,13 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
       </div>
 
       {/* Kontrol planı olmayan malzeme uyarısı */}
-      {materialsWithoutPlans.length > 0 && materialsWithPlans.length > 0 && (
+      {materialsWithoutPlans.length > 0 && (
         <Card className="border-amber-200 bg-amber-50/50">
           <CardContent className="pt-4">
             <p className="text-sm text-amber-700 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               {materialsWithoutPlans.length} malzemenin kontrol planı yok.
-              Kalite Kontrol &gt; Kontrol Planları sekmesinden oluşturabilirsiniz.
+              Kalite Kontrol &gt; Kontrol Planları sekmesinden malzeme kontrol planı oluşturabilirsiniz.
             </p>
           </CardContent>
         </Card>
@@ -437,25 +451,33 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
                 <Select value={selectedMaterialId} onValueChange={handleMaterialSelect}>
                   <SelectTrigger><SelectValue placeholder="Malzeme seçin" /></SelectTrigger>
                   <SelectContent>
-                    {materialsWithPlans.map(m => (
-                      <SelectItem key={m.id} value={m.id}>{m.code} - {m.name}</SelectItem>
-                    ))}
+                    {materials.map(m => {
+                      const hasPlan = materialPlans.some(p => p.material_id === m.id)
+                      return (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.code} - {m.name} {!hasPlan ? '(Plan yok)' : ''}
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
                 {selectedMaterialId && !inspPlan && (
-                  <p className="text-xs text-red-500">Bu malzeme için kontrol planı bulunamadı</p>
+                  <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 p-2 rounded">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>Bu malzeme için kontrol planı yok. Kalite Kontrol &gt; Kontrol Planları sekmesinden oluşturun.</span>
+                  </div>
                 )}
               </div>
               <div className="space-y-2">
                 <Label>Stok Girişi (opsiyonel)</Label>
-                <Select value={selectedEntryId} onValueChange={setSelectedEntryId}>
+                <Select value={selectedEntryId} onValueChange={v => { setSelectedEntryId(v); const entry = recentEntries.find(e => e.id === v); if (entry) setInspQty(String(entry.quantity)) }}>
                   <SelectTrigger><SelectValue placeholder="İrsaliye/Lot seçin" /></SelectTrigger>
                   <SelectContent>
                     {recentEntries
                       .filter(e => !selectedMaterialId || e.material_id === selectedMaterialId)
                       .map(e => (
                         <SelectItem key={e.id} value={e.id}>
-                          {e.material?.code} - İrs: {e.invoice_number || '-'} / Lot: {e.lot_number || '-'} ({e.quantity} {e.material?.unit})
+                          İrs: {e.invoice_number || '-'} / Lot: {e.lot_number || '-'} ({e.quantity} {e.material?.unit})
                         </SelectItem>
                       ))}
                   </SelectContent>
@@ -512,11 +534,9 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {hasPlan && (
-                            <Button size="sm" variant="outline" onClick={() => startInspection(e)}>
-                              <ClipboardCheck className="w-3 h-3 mr-1" />Kontrol Et
-                            </Button>
-                          )}
+                          <Button size="sm" variant={hasPlan ? 'outline' : 'ghost'} onClick={() => startInspection(e)} disabled={!hasPlan} title={!hasPlan ? 'Önce kontrol planı oluşturun' : ''}>
+                            <ClipboardCheck className="w-3 h-3 mr-1" />{hasPlan ? 'Kontrol Et' : 'Plan Yok'}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     )

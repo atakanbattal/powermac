@@ -25,7 +25,7 @@ export default function LoginPage() {
       if (error) {
         toast.error('Giriş başarısız: ' + error.message)
       } else {
-        router.push('/')
+        router.push('/bom')
         router.refresh()
       }
     } catch {

@@ -44,10 +44,10 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Giriş yapmış kullanıcıyı login'den dashboard'a yönlendir
+  // Giriş yapmış kullanıcıyı login'den BOM/Reçete'ye yönlendir
   if (user && request.nextUrl.pathname.startsWith('/giris')) {
     const url = request.nextUrl.clone()
-    url.pathname = '/'
+    url.pathname = '/bom'
     return NextResponse.redirect(url)
   }
 
