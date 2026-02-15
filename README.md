@@ -74,6 +74,10 @@ DDMMYY-MODEL-SIRA
 - **MODEL:** A, B veya C
 - **SIRA:** Aynı gün ve model için otomatik artan (01, 02...)
 
+## Canlı Uygulama
+
+**https://power-mac.netlify.app**
+
 ## Netlify Deploy
 
 ```bash
@@ -86,10 +90,20 @@ netlify deploy --prod
 
 ### Netlify Ayarları
 
+- **Site URL:** https://power-mac.netlify.app
 - **Build command:** `npm run build`
 - **Publish directory:** `.next`
 - **Node version:** 20
 - **Environment variables:** Yukarıdaki ortam değişkenlerini Netlify dashboard'dan ekleyin
+
+### Supabase Auth URL Yapılandırması
+
+Deploy sonrası giriş çalışması için Supabase Dashboard → **Authentication** → **URL Configuration** bölümüne ekleyin:
+
+| Alan | Değer |
+|------|-------|
+| **Site URL** | `https://power-mac.netlify.app` |
+| **Redirect URLs** | `https://power-mac.netlify.app/**`<br>`https://power-mac.netlify.app/auth/callback` |
 
 ## Veritabanı Şeması
 
