@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { NAV_ITEMS } from '@/lib/constants'
 import {
-  LayoutDashboard, Factory, Package, FileText, ShieldCheck,
+  LayoutDashboard, Factory, Package, PackageCheck, FileText, ShieldCheck,
   ClipboardList, Truck, Search, AlertTriangle, Settings, LogOut, Cog
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -13,7 +13,7 @@ import { useRouter } from 'next/navigation'
 import type { Profile } from '@/lib/types'
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-  LayoutDashboard, Factory, Package, FileText, ShieldCheck,
+  LayoutDashboard, Factory, Package, PackageCheck, FileText, ShieldCheck,
   ClipboardList, Truck, Search, AlertTriangle, Settings,
 }
 

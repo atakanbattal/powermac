@@ -19,7 +19,7 @@ import { MODEL_LABELS } from '@/lib/constants'
 import type { ControlPlanRevision, ControlPlanItem, InspectionResult, GearboxModel } from '@/lib/types'
 import {
   Plus, ShieldCheck, Eye, AlertTriangle, CheckCircle, XCircle, Clock,
-  ClipboardList, Loader2, Trash2, Star, Pencil, Send, Save, ArrowLeft
+  ClipboardList, Loader2, Trash2, Star, Pencil, Send, Save, ArrowLeft, X, Check
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -59,28 +59,24 @@ interface MeasurementEntry {
   result: InspectionResult
 }
 
+const emptyItemForm = {
+  name: '', characteristic: '', nominal_value: '', lower_limit: '', upper_limit: '',
+  unit: 'mm', measurement_method: '', equipment: '', is_critical: false, is_100_percent: true,
+}
+
 export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlans: initPlans, materials }: Props) {
   const [plans, setPlans] = useState(initPlans)
   const [planOpen, setPlanOpen] = useState(false)
-  const [itemOpen, setItemOpen] = useState(false)
-  const [editItemOpen, setEditItemOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null)
-  const [editingItem, setEditingItem] = useState<ControlPlanItem | null>(null)
+
+  // Inline ölçüm ekleme
+  const [addingItemPlanId, setAddingItemPlanId] = useState<string | null>(null)
+  const [itemForm, setItemForm] = useState(emptyItemForm)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
 
   // Plan oluşturma
   const [planTarget, setPlanTarget] = useState<string>('A')
   const [planDesc, setPlanDesc] = useState('')
-
-  // Ölçüm satırı ekleme
-  const [itemForm, setItemForm] = useState({
-    name: '', characteristic: '', nominal_value: '', lower_limit: '', upper_limit: '',
-    unit: 'mm', measurement_method: '', equipment: '', is_critical: false, is_100_percent: true,
-  })
-  const emptyItemForm = {
-    name: '', characteristic: '', nominal_value: '', lower_limit: '', upper_limit: '',
-    unit: 'mm', measurement_method: '', equipment: '', is_critical: false, is_100_percent: true,
-  }
 
   // QC State
   const [qcMode, setQcMode] = useState(false)
@@ -110,11 +106,9 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
       const materialId = planTarget.startsWith('mat:') ? planTarget.replace('mat:', '') : null
       const targetName = isModel ? `Model ${planTarget}` : targetOptions.find(o => o.value === planTarget)?.label || planTarget
 
-      // Find max revision for this target
       const existing = plans.filter(p => isModel ? p.model === planTarget : p.material_id === materialId)
       const maxRev = existing.reduce((max, p) => Math.max(max, p.revision_no), 0)
 
-      // Deactivate previous
       if (isModel) {
         await supabase.from('control_plan_revisions').update({ is_active: false }).eq('model', planTarget).eq('is_active', true)
       } else if (materialId) {
@@ -122,14 +116,9 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
       }
 
       const { data, error } = await supabase.from('control_plan_revisions').insert({
-        model: modelVal,
-        revision_no: maxRev + 1,
-        description: planDesc,
-        is_active: true,
-        created_by: user?.id,
-        target_type: isModel ? 'model' : 'material',
-        target_name: targetName,
-        material_id: materialId,
+        model: modelVal, revision_no: maxRev + 1, description: planDesc, is_active: true,
+        created_by: user?.id, target_type: isModel ? 'model' : 'material',
+        target_name: targetName, material_id: materialId,
       }).select('*, control_plan_items(*)').single()
       if (error) throw error
 
@@ -146,27 +135,31 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
     } finally { setLoading(false) }
   }
 
+  // Inline ölçüm satırı ekleme
+  const startAddItem = (planId: string) => {
+    setAddingItemPlanId(planId)
+    setEditingItemId(null)
+    setItemForm(emptyItemForm)
+  }
+
   const handleAddItem = async () => {
-    if (!selectedPlanId || !itemForm.name) return
+    if (!addingItemPlanId || !itemForm.name) return
     setLoading(true)
     try {
       const { data, error } = await supabase.from('control_plan_items').insert({
-        control_plan_id: selectedPlanId,
-        name: itemForm.name,
+        control_plan_id: addingItemPlanId, name: itemForm.name,
         characteristic: itemForm.characteristic || null,
         nominal_value: itemForm.nominal_value ? parseFloat(itemForm.nominal_value) : null,
         lower_limit: itemForm.lower_limit ? parseFloat(itemForm.lower_limit) : null,
         upper_limit: itemForm.upper_limit ? parseFloat(itemForm.upper_limit) : null,
-        unit: itemForm.unit,
-        measurement_method: itemForm.measurement_method || null,
+        unit: itemForm.unit, measurement_method: itemForm.measurement_method || null,
         equipment: itemForm.equipment || null,
-        is_critical: itemForm.is_critical,
-        is_100_percent: itemForm.is_100_percent,
+        is_critical: itemForm.is_critical, is_100_percent: itemForm.is_100_percent,
       }).select('*').single()
       if (error) throw error
 
-      setPlans(plans.map(p => p.id === selectedPlanId ? { ...p, control_plan_items: [...p.control_plan_items, data] } : p))
-      setItemOpen(false)
+      setPlans(plans.map(p => p.id === addingItemPlanId ? { ...p, control_plan_items: [...p.control_plan_items, data] } : p))
+      // Formu temizle ama ekleme modunda kal (hızlı ardışık ekleme)
       setItemForm(emptyItemForm)
       toast.success('Ölçüm satırı eklendi')
     } catch (err: unknown) {
@@ -174,48 +167,47 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
     } finally { setLoading(false) }
   }
 
-  const openEditItem = (item: ControlPlanItem) => {
-    setEditingItem(item)
+  const startEditItem = (item: ControlPlanItem) => {
+    setEditingItemId(item.id)
+    setAddingItemPlanId(null)
     setItemForm({
       name: item.name, characteristic: item.characteristic || '',
-      nominal_value: item.nominal_value !== null ? String(item.nominal_value) : '',
-      lower_limit: item.lower_limit !== null ? String(item.lower_limit) : '',
-      upper_limit: item.upper_limit !== null ? String(item.upper_limit) : '',
+      nominal_value: item.nominal_value !== null && item.nominal_value !== undefined ? String(item.nominal_value) : '',
+      lower_limit: item.lower_limit !== null && item.lower_limit !== undefined ? String(item.lower_limit) : '',
+      upper_limit: item.upper_limit !== null && item.upper_limit !== undefined ? String(item.upper_limit) : '',
       unit: item.unit, measurement_method: item.measurement_method || '',
       equipment: item.equipment || '', is_critical: item.is_critical, is_100_percent: item.is_100_percent,
     })
-    setEditItemOpen(true)
   }
 
   const handleUpdateItem = async () => {
-    if (!editingItem) return
+    if (!editingItemId) return
     setLoading(true)
     try {
       const { error } = await supabase.from('control_plan_items').update({
-        name: itemForm.name,
-        characteristic: itemForm.characteristic || null,
+        name: itemForm.name, characteristic: itemForm.characteristic || null,
         nominal_value: itemForm.nominal_value ? parseFloat(itemForm.nominal_value) : null,
         lower_limit: itemForm.lower_limit ? parseFloat(itemForm.lower_limit) : null,
         upper_limit: itemForm.upper_limit ? parseFloat(itemForm.upper_limit) : null,
-        unit: itemForm.unit,
-        measurement_method: itemForm.measurement_method || null,
+        unit: itemForm.unit, measurement_method: itemForm.measurement_method || null,
         equipment: itemForm.equipment || null,
-        is_critical: itemForm.is_critical,
-        is_100_percent: itemForm.is_100_percent,
-      }).eq('id', editingItem.id)
+        is_critical: itemForm.is_critical, is_100_percent: itemForm.is_100_percent,
+      }).eq('id', editingItemId)
       if (error) throw error
 
       setPlans(plans.map(p => ({
         ...p,
-        control_plan_items: p.control_plan_items.map(i => i.id === editingItem.id ? {
-          ...i, ...itemForm,
+        control_plan_items: p.control_plan_items.map(i => i.id === editingItemId ? {
+          ...i, name: itemForm.name, characteristic: itemForm.characteristic || null,
           nominal_value: itemForm.nominal_value ? parseFloat(itemForm.nominal_value) : null,
           lower_limit: itemForm.lower_limit ? parseFloat(itemForm.lower_limit) : null,
           upper_limit: itemForm.upper_limit ? parseFloat(itemForm.upper_limit) : null,
+          unit: itemForm.unit, measurement_method: itemForm.measurement_method || null,
+          equipment: itemForm.equipment || null,
+          is_critical: itemForm.is_critical, is_100_percent: itemForm.is_100_percent,
         } as ControlPlanItem : i),
       })))
-      setEditItemOpen(false)
-      setEditingItem(null)
+      setEditingItemId(null)
       setItemForm(emptyItemForm)
       toast.success('Ölçüm güncellendi')
     } catch (err: unknown) {
@@ -257,7 +249,6 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
   }
 
   const startQCFromPlan = (plan: (typeof plans)[0]) => {
-    // Find a pending gearbox for this model
     const gearbox = pendingGearboxes.find(g => g.model === plan.model)
     if (!gearbox) {
       toast.error('Bu model için kontrol bekleyen şanzıman yok')
@@ -277,68 +268,40 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
     }))
   }, [qcPlan])
 
-  const overallResult = (): InspectionResult => {
-    const vals = Object.values(measurements)
-    if (vals.some(m => m.result === 'beklemede')) return 'beklemede'
-    const hasCriticalRet = vals.some(m => {
-      const item = qcPlan?.control_plan_items.find(i => i.id === m.control_plan_item_id)
-      return item?.is_critical && m.result === 'ret'
-    })
-    if (hasCriticalRet) return 'ret'
-    if (vals.some(m => m.result === 'ret')) return 'ret'
-    return 'ok'
-  }
-
-  const qcResult = overallResult()
-  const allFilled = Object.values(measurements).every(m => m.measured_value !== '')
-
   const handleSubmitQC = async (isDraft: boolean) => {
     if (!qcGearbox || !qcPlan) return
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      const finalResult = isDraft ? 'beklemede' : qcResult
+      const mVals = Object.values(measurements)
+      const hasRet = mVals.some(m => m.result === 'ret')
+      const hasCriticalRet = qcPlan.control_plan_items.some(item =>
+        item.is_critical && measurements[item.id]?.result === 'ret'
+      )
+      const overallResult: InspectionResult = isDraft ? 'beklemede' : (hasRet || hasCriticalRet ? 'ret' : 'ok')
 
-      const { data: inspection, error } = await supabase.from('quality_inspections').insert({
-        gearbox_id: qcGearbox.id,
-        control_plan_id: qcPlan.id,
-        inspector_id: user?.id,
-        overall_result: finalResult,
-        comments: qcComments,
-        is_draft: isDraft,
+      const { data: inspection, error: inspError } = await supabase.from('quality_inspections').insert({
+        gearbox_id: qcGearbox.id, control_plan_id: qcPlan.id,
+        inspector_id: user?.id, overall_result: overallResult,
+        comments: qcComments || null, is_draft: isDraft,
       }).select().single()
-      if (error) throw error
+      if (inspError) throw inspError
 
-      const measurementRows = Object.values(measurements).map(m => ({
-        inspection_id: inspection.id,
-        control_plan_item_id: m.control_plan_item_id,
-        measured_value: m.measured_value ? parseFloat(m.measured_value) : null,
-        result: m.result,
+      const measurementRows = mVals.filter(m => m.measured_value).map(m => ({
+        inspection_id: inspection.id, control_plan_item_id: m.control_plan_item_id,
+        measured_value: parseFloat(m.measured_value), result: m.result,
       }))
-      const { error: mError } = await supabase.from('quality_measurements').insert(measurementRows)
-      if (mError) throw mError
+      if (measurementRows.length > 0) {
+        const { error: mError } = await supabase.from('quality_measurements').insert(measurementRows)
+        if (mError) throw mError
+      }
 
-      if (!isDraft) {
-        const newStatus = finalResult === 'ok' ? 'stokta' : 'revizyon_iade'
-        await supabase.from('gearboxes').update({
-          status: newStatus,
-          ...(newStatus === 'stokta' ? { production_end: new Date().toISOString() } : {}),
-        }).eq('id', qcGearbox.id)
-
-        if (finalResult === 'ret') {
-          const ncrNum = await supabase.rpc('generate_ncr_number')
-          await supabase.from('ncr_records').insert({
-            gearbox_id: qcGearbox.id,
-            inspection_id: inspection.id,
-            ncr_number: ncrNum.data || `NCR-${Date.now()}`,
-            status: 'acik',
-            description: `Final kontrol RED - ${qcGearbox.serial_number}. ${qcComments}`,
-            created_by: user?.id,
-          })
-          toast.warning('RED - Uygunsuzluk kaydı (NCR) otomatik oluşturuldu')
-        } else {
-          toast.success('GEÇTİ - Şanzıman stoğa alındı')
-        }
+      if (!isDraft && overallResult === 'ok') {
+        await supabase.from('gearboxes').update({ status: 'stokta' }).eq('id', qcGearbox.id)
+        toast.success('Kalite kontrol GEÇTİ - Ürün stoğa alındı')
+      } else if (!isDraft && overallResult === 'ret') {
+        await supabase.from('gearboxes').update({ status: 'revizyon_iade' }).eq('id', qcGearbox.id)
+        toast.error('Kalite kontrol RED - Revizyon/İade')
       } else {
         toast.success('Taslak kaydedildi')
       }
@@ -346,44 +309,59 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
       setQcMode(false)
       setQcGearbox(null)
       setQcPlan(null)
+      setMeasurements({})
+      setQcComments('')
       router.refresh()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Hata oluştu')
+      toast.error(err instanceof Error ? err.message : 'Hata')
     } finally { setLoading(false) }
   }
 
-  // Render ölçüm form satırı
-  const renderItemFormFields = () => (
-    <div className="space-y-4 pt-2">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2"><Label>Ölçüm Adı</Label><Input value={itemForm.name} onChange={e => setItemForm({ ...itemForm, name: e.target.value })} placeholder="Mil Çapı" /></div>
-        <div className="space-y-2"><Label>Karakteristik</Label><Input value={itemForm.characteristic} onChange={e => setItemForm({ ...itemForm, characteristic: e.target.value })} /></div>
-      </div>
-      <div className="grid grid-cols-3 gap-4">
-        <div className="space-y-2"><Label>Nominal</Label><Input type="number" step="0.001" value={itemForm.nominal_value} onChange={e => setItemForm({ ...itemForm, nominal_value: e.target.value })} /></div>
-        <div className="space-y-2"><Label>Alt Limit</Label><Input type="number" step="0.001" value={itemForm.lower_limit} onChange={e => setItemForm({ ...itemForm, lower_limit: e.target.value })} /></div>
-        <div className="space-y-2"><Label>Üst Limit</Label><Input type="number" step="0.001" value={itemForm.upper_limit} onChange={e => setItemForm({ ...itemForm, upper_limit: e.target.value })} /></div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2"><Label>Birim</Label><Input value={itemForm.unit} onChange={e => setItemForm({ ...itemForm, unit: e.target.value })} /></div>
-        <div className="space-y-2"><Label>Yöntem/Ekipman</Label><Input value={itemForm.measurement_method} onChange={e => setItemForm({ ...itemForm, measurement_method: e.target.value })} /></div>
-      </div>
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Checkbox id="critical-cp" checked={itemForm.is_critical} onCheckedChange={v => setItemForm({ ...itemForm, is_critical: v as boolean })} />
-          <Label htmlFor="critical-cp" className="text-sm">Kritik</Label>
+  // Inline satır render - ekleme veya düzenleme formu
+  const renderInlineItemRow = (planId: string) => (
+    <TableRow className="bg-blue-50/50">
+      <TableCell>
+        <Checkbox checked={itemForm.is_critical} onCheckedChange={v => setItemForm({ ...itemForm, is_critical: v as boolean })} />
+      </TableCell>
+      <TableCell>
+        <Input className="h-8 text-sm" value={itemForm.name} onChange={e => setItemForm({ ...itemForm, name: e.target.value })} placeholder="Ölçüm adı *" />
+      </TableCell>
+      <TableCell>
+        <Input className="h-8 text-sm font-mono w-20" type="number" step="0.001" value={itemForm.nominal_value} onChange={e => setItemForm({ ...itemForm, nominal_value: e.target.value })} placeholder="0.00" />
+      </TableCell>
+      <TableCell>
+        <Input className="h-8 text-sm font-mono w-20" type="number" step="0.001" value={itemForm.lower_limit} onChange={e => setItemForm({ ...itemForm, lower_limit: e.target.value })} placeholder="0.00" />
+      </TableCell>
+      <TableCell>
+        <Input className="h-8 text-sm font-mono w-20" type="number" step="0.001" value={itemForm.upper_limit} onChange={e => setItemForm({ ...itemForm, upper_limit: e.target.value })} placeholder="0.00" />
+      </TableCell>
+      <TableCell>
+        <Input className="h-8 text-sm w-16" value={itemForm.unit} onChange={e => setItemForm({ ...itemForm, unit: e.target.value })} />
+      </TableCell>
+      <TableCell>
+        <Input className="h-8 text-sm" value={itemForm.measurement_method} onChange={e => setItemForm({ ...itemForm, measurement_method: e.target.value })} placeholder="Yöntem" />
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex gap-1 justify-end">
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-emerald-600" disabled={loading || !itemForm.name}
+            onClick={editingItemId ? handleUpdateItem : handleAddItem}>
+            <Check className="w-4 h-4" />
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setAddingItemPlanId(null); setEditingItemId(null); setItemForm(emptyItemForm) }}>
+            <X className="w-4 h-4" />
+          </Button>
         </div>
-        <div className="flex items-center gap-2">
-          <Checkbox id="pct100-cp" checked={itemForm.is_100_percent} onCheckedChange={v => setItemForm({ ...itemForm, is_100_percent: v as boolean })} />
-          <Label htmlFor="pct100-cp" className="text-sm">%100 Kontrol</Label>
-        </div>
-      </div>
-    </div>
+      </TableCell>
+    </TableRow>
   )
 
   // === QC MODE RENDER ===
   if (qcMode && qcGearbox && qcPlan) {
     const items = qcPlan.control_plan_items
+    const qcResult: InspectionResult = Object.values(measurements).some(m => m.result === 'ret') ? 'ret'
+      : Object.values(measurements).every(m => m.result === 'ok') ? 'ok' : 'beklemede'
+    const allFilled = Object.values(measurements).every(m => m.measured_value !== '')
+
     return (
       <div className="space-y-6">
         <div>
@@ -423,24 +401,18 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
                             {m?.result === 'ret' && <div className="text-xs text-red-600 font-medium mt-0.5">Tolerans dışı!</div>}
                           </TableCell>
                           <TableCell className="font-mono text-sm">
-                            {item.nominal_value !== null ? `${item.nominal_value} ` : ''}
-                            {item.lower_limit !== null && item.upper_limit !== null
+                            {item.nominal_value !== null && item.nominal_value !== undefined ? `${item.nominal_value} ` : ''}
+                            {item.lower_limit !== null && item.lower_limit !== undefined && item.upper_limit !== null && item.upper_limit !== undefined
                               ? `(${item.lower_limit} - ${item.upper_limit})`
-                              : item.upper_limit !== null ? `Max ${item.upper_limit}` : ''}
+                              : item.upper_limit !== null && item.upper_limit !== undefined ? `Max ${item.upper_limit}` : ''}
                             {' '}{item.unit}
                           </TableCell>
                           <TableCell>
-                            <Input
-                              type="number" step="0.001"
+                            <Input type="number" step="0.001"
                               className={`font-mono text-right ${m?.result === 'ret' ? 'border-red-300 text-red-600 font-bold' : ''}`}
-                              placeholder="---"
-                              value={m?.measured_value || ''}
-                              onChange={e => handleValueChange(item.id, e.target.value)}
-                            />
+                              placeholder="---" value={m?.measured_value || ''} onChange={e => handleValueChange(item.id, e.target.value)} />
                           </TableCell>
-                          <TableCell className="text-center">
-                            {RESULT_ICON[m?.result || 'beklemede']}
-                          </TableCell>
+                          <TableCell className="text-center">{RESULT_ICON[m?.result || 'beklemede']}</TableCell>
                         </TableRow>
                       )
                     })}
@@ -560,7 +532,7 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
                   <DialogHeader><DialogTitle>Yeni Kontrol Planı</DialogTitle></DialogHeader>
                   <div className="space-y-4 pt-2">
                     <div className="space-y-2">
-                      <Label>Ürün / Model Seçin</Label>
+                      <Label>Ürün / Model / Malzeme Seçin</Label>
                       <Select value={planTarget} onValueChange={setPlanTarget}>
                         <SelectTrigger><SelectValue placeholder="Seçin" /></SelectTrigger>
                         <SelectContent>
@@ -589,30 +561,23 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
               <Card><CardContent className="py-12 text-center text-muted-foreground">Henüz kontrol planı yok</CardContent></Card>
             ) : plans.map(plan => (
               <Card key={plan.id}>
-                <CardHeader className="flex flex-row items-center justify-between">
+                <CardHeader className="py-3 flex flex-row items-center justify-between">
                   <div className="flex items-center gap-3">
                     <ClipboardList className="w-5 h-5 text-primary" />
                     <div>
-                      <CardTitle className="text-base">{plan.target_name || (plan.model ? MODEL_LABELS[plan.model] : 'Plan')}</CardTitle>
+                      <CardTitle className="text-sm font-semibold">{plan.target_name || (plan.model ? MODEL_LABELS[plan.model] : 'Plan')}</CardTitle>
                       <p className="text-xs text-muted-foreground">{plan.description || ''} &bull; {plan.control_plan_items.length} ölçüm</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {plan.model && pendingGearboxes.some(g => g.model === plan.model) && (
-                      <Button size="sm" onClick={() => startQCFromPlan(plan)}>
-                        <ShieldCheck className="w-3 h-3 mr-1" />Kontrol Başlat
+                      <Button size="sm" variant="outline" onClick={() => startQCFromPlan(plan)}>
+                        <ShieldCheck className="w-3 h-3 mr-1" />Kontrol
                       </Button>
                     )}
-                    <Dialog open={itemOpen && selectedPlanId === plan.id} onOpenChange={v => { setItemOpen(v); if (v) { setSelectedPlanId(plan.id); setItemForm(emptyItemForm) } }}>
-                      <DialogTrigger asChild><Button size="sm" variant="outline"><Plus className="w-3 h-3 mr-1" />Ölçüm Ekle</Button></DialogTrigger>
-                      <DialogContent className="max-w-lg">
-                        <DialogHeader><DialogTitle>Ölçüm Satırı Ekle</DialogTitle></DialogHeader>
-                        {renderItemFormFields()}
-                        <Button onClick={handleAddItem} disabled={loading || !itemForm.name} className="w-full mt-4">
-                          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}Ekle
-                        </Button>
-                      </DialogContent>
-                    </Dialog>
+                    <Button size="sm" variant="outline" onClick={() => startAddItem(plan.id)}>
+                      <Plus className="w-3 h-3 mr-1" />Ölçüm Ekle
+                    </Button>
                     <Button size="sm" variant="ghost" onClick={() => handleDeletePlan(plan.id, plan.target_name || 'Plan')}>
                       <Trash2 className="w-4 h-4 text-red-500" />
                     </Button>
@@ -621,37 +586,50 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
                 <CardContent className="p-0">
                   <Table>
                     <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-8"></TableHead>
+                      <TableRow className="text-xs">
+                        <TableHead className="w-10">Kritik</TableHead>
                         <TableHead>Ölçüm Adı</TableHead>
-                        <TableHead>Nominal</TableHead>
-                        <TableHead>Alt Limit</TableHead>
-                        <TableHead>Üst Limit</TableHead>
-                        <TableHead>Birim</TableHead>
+                        <TableHead className="w-24">Nominal</TableHead>
+                        <TableHead className="w-24">Alt Limit</TableHead>
+                        <TableHead className="w-24">Üst Limit</TableHead>
+                        <TableHead className="w-20">Birim</TableHead>
                         <TableHead>Yöntem</TableHead>
-                        <TableHead className="text-right">İşlem</TableHead>
+                        <TableHead className="text-right w-24">İşlem</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {plan.control_plan_items.length === 0 ? (
-                        <TableRow><TableCell colSpan={8} className="text-center py-6 text-muted-foreground">Ölçüm tanımlanmadı</TableCell></TableRow>
-                      ) : plan.control_plan_items.map(item => (
-                        <TableRow key={item.id}>
-                          <TableCell>{item.is_critical && <Star className="w-4 h-4 text-amber-500 fill-amber-500" />}</TableCell>
-                          <TableCell className="font-medium">{item.name}</TableCell>
-                          <TableCell className="font-mono">{item.nominal_value ?? '-'}</TableCell>
-                          <TableCell className="font-mono">{item.lower_limit ?? '-'}</TableCell>
-                          <TableCell className="font-mono">{item.upper_limit ?? '-'}</TableCell>
-                          <TableCell>{item.unit}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{item.measurement_method || '-'}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex gap-1 justify-end">
-                              <Button variant="ghost" size="sm" onClick={() => openEditItem(item)}><Pencil className="w-4 h-4" /></Button>
-                              <Button variant="ghost" size="sm" onClick={() => handleDeleteItem(plan.id, item.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
-                            </div>
+                      {plan.control_plan_items.length === 0 && addingItemPlanId !== plan.id ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-4 text-muted-foreground text-sm">
+                            Ölçüm tanımlanmadı - &quot;Ölçüm Ekle&quot; ile başlayın
                           </TableCell>
                         </TableRow>
+                      ) : plan.control_plan_items.map(item => (
+                        editingItemId === item.id ? (
+                          renderInlineItemRow(plan.id)
+                        ) : (
+                          <TableRow key={item.id} className="text-sm">
+                            <TableCell>{item.is_critical && <Star className="w-4 h-4 text-amber-500 fill-amber-500" />}</TableCell>
+                            <TableCell className="font-medium">{item.name}</TableCell>
+                            <TableCell className="font-mono text-sm">{item.nominal_value ?? '-'}</TableCell>
+                            <TableCell className="font-mono text-sm">{item.lower_limit ?? '-'}</TableCell>
+                            <TableCell className="font-mono text-sm">{item.upper_limit ?? '-'}</TableCell>
+                            <TableCell>{item.unit}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{item.measurement_method || '-'}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => startEditItem(item)}>
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDeleteItem(plan.id, item.id)}>
+                                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
                       ))}
+                      {addingItemPlanId === plan.id && renderInlineItemRow(plan.id)}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -706,17 +684,6 @@ export function KaliteKontrolClient({ inspections, pendingGearboxes, controlPlan
           </Card>
         </TabsContent>
       </Tabs>
-
-      {/* Düzenleme Modalı */}
-      <Dialog open={editItemOpen} onOpenChange={setEditItemOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Ölçüm Düzenle</DialogTitle></DialogHeader>
-          {renderItemFormFields()}
-          <Button onClick={handleUpdateItem} disabled={loading || !itemForm.name} className="w-full mt-4">
-            {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}Güncelle
-          </Button>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

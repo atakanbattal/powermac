@@ -1,4 +1,4 @@
-import { GearboxStatus, GearboxModel, MaterialCategory, NcrStatus, UserRole } from './types'
+import { GearboxStatus, GearboxModel, MaterialCategory, UserRole } from './types'
 
 export const STATUS_LABELS: Record<GearboxStatus, string> = {
   uretimde: 'Üretimde',
@@ -36,13 +36,6 @@ export const CATEGORY_LABELS: Record<MaterialCategory, string> = {
   sarf: 'Sarf Malzeme',
 }
 
-export const NCR_STATUS_LABELS: Record<NcrStatus, string> = {
-  acik: 'Açık',
-  analiz: 'Analiz',
-  aksiyon: 'Aksiyon',
-  kapandi: 'Kapandı',
-}
-
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Yönetici',
   quality: 'Kalite',
@@ -66,8 +59,8 @@ export const NAV_ITEMS = [
   { href: '/girdi-kontrol', label: 'Girdi Kontrol', icon: 'ClipboardList' },
   { href: '/uretim', label: 'Üretim', icon: 'Factory' },
   { href: '/kalite-kontrol', label: 'Kalite Kontrol', icon: 'ShieldCheck' },
+  { href: '/bitimis-urun-stok', label: 'Bitmiş Ürün Stok', icon: 'PackageCheck' },
   { href: '/sevkiyat', label: 'Sevkiyat', icon: 'Truck' },
   { href: '/izlenebilirlik', label: 'İzlenebilirlik', icon: 'Search' },
-  { href: '/ncr', label: 'Uygunsuzluk (NCR)', icon: 'AlertTriangle' },
   { href: '/ayarlar', label: 'Ayarlar', icon: 'Settings' },
 ]
