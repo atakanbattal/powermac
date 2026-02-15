@@ -54,6 +54,7 @@ export const ALLOWED_TRANSITIONS: Record<GearboxStatus, GearboxStatus[]> = {
 }
 
 export const NAV_ITEMS = [
+  { href: '/', label: 'Anasayfa', icon: 'LayoutDashboard' },
   { href: '/bom', label: 'BOM / Reçete', icon: 'FileText' },
   { href: '/malzeme', label: 'Malzeme & Stok', icon: 'Package' },
   { href: '/girdi-kontrol', label: 'Girdi Kontrol', icon: 'ClipboardList' },
