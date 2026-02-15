@@ -65,6 +65,7 @@ export const NAV_ITEMS = [
   { href: '/uretim', label: 'Üretim', icon: 'Factory' },
   { href: '/malzeme', label: 'Malzeme & Stok', icon: 'Package' },
   { href: '/bom', label: 'BOM / Reçete', icon: 'FileText' },
+  { href: '/girdi-kontrol', label: 'Girdi Kontrol', icon: 'ClipboardList' },
   { href: '/kalite-kontrol', label: 'Kalite Kontrol', icon: 'ShieldCheck' },
   { href: '/sevkiyat', label: 'Sevkiyat', icon: 'Truck' },
   { href: '/izlenebilirlik', label: 'İzlenebilirlik', icon: 'Search' },

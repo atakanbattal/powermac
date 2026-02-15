@@ -11,11 +11,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { MODEL_LABELS } from '@/lib/constants'
-import type { Shipment, Gearbox } from '@/lib/types'
-import { Plus, Truck, Car, Loader2 } from 'lucide-react'
+import type { Shipment } from '@/lib/types'
+import { Plus, Truck, Car, Loader2, Package, CheckCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Props {
@@ -29,29 +29,75 @@ export function SevkiyatClient({ shipments: initShipments, stockGearboxes, shipp
   const [shipOpen, setShipOpen] = useState(false)
   const [mountOpen, setMountOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [shipForm, setShipForm] = useState({ gearbox_id: '', shipment_date: new Date().toISOString().split('T')[0], customer_name: '', delivery_address: '', waybill_number: '', invoice_number: '', notes: '' })
-  const [mountForm, setMountForm] = useState({ gearbox_id: '', assembly_date: new Date().toISOString().split('T')[0], vehicle_plate: '', vin_number: '', customer_name: '', notes: '' })
+
+  // Çoklu seçim
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [shipForm, setShipForm] = useState({
+    shipment_date: new Date().toISOString().split('T')[0],
+    customer_name: '', delivery_address: '', waybill_number: '', invoice_number: '', notes: '',
+  })
+  const [mountForm, setMountForm] = useState({
+    gearbox_id: '', assembly_date: new Date().toISOString().split('T')[0],
+    vehicle_plate: '', vin_number: '', customer_name: '', notes: '',
+  })
   const router = useRouter()
   const supabase = createClient()
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAll = () => {
+    if (selectedIds.size === stockGearboxes.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(stockGearboxes.map(g => g.id)))
+    }
+  }
+
   const handleCreateShipment = async () => {
+    if (selectedIds.size === 0) { toast.error('En az bir şanzıman seçin'); return }
     setLoading(true)
     try {
-      if (!shipForm.gearbox_id) throw new Error('Şanzıman seçin')
       const { data: { user } } = await supabase.auth.getUser()
-      const { data, error } = await supabase.from('shipments').insert({
-        ...shipForm,
+      const ids = Array.from(selectedIds)
+
+      // Her seçili şanzıman için sevkiyat kaydı oluştur
+      const rows = ids.map(gearbox_id => ({
+        gearbox_id,
+        shipment_date: shipForm.shipment_date,
+        customer_name: shipForm.customer_name,
+        delivery_address: shipForm.delivery_address,
+        waybill_number: shipForm.waybill_number,
+        invoice_number: shipForm.invoice_number,
+        notes: shipForm.notes,
         shipped_by: user?.id,
-      }).select('*, gearbox:gearboxes(serial_number, model, status)').single()
+      }))
+
+      const { data, error } = await supabase
+        .from('shipments')
+        .insert(rows)
+        .select('*, gearbox:gearboxes(serial_number, model, status)')
       if (error) throw error
 
-      // Durumu güncelle
-      await supabase.from('gearboxes').update({ status: 'sevk_edildi' }).eq('id', shipForm.gearbox_id)
+      // Durumları güncelle
+      for (const id of ids) {
+        await supabase.from('gearboxes').update({ status: 'sevk_edildi' }).eq('id', id)
+      }
 
-      setShipments([data, ...shipments])
+      setShipments([...(data || []), ...shipments])
       setShipOpen(false)
-      setShipForm({ gearbox_id: '', shipment_date: new Date().toISOString().split('T')[0], customer_name: '', delivery_address: '', waybill_number: '', invoice_number: '', notes: '' })
-      toast.success('Sevkiyat kaydedildi')
+      setSelectedIds(new Set())
+      setShipForm({
+        shipment_date: new Date().toISOString().split('T')[0],
+        customer_name: '', delivery_address: '', waybill_number: '', invoice_number: '', notes: '',
+      })
+      toast.success(`${ids.length} şanzıman sevk edildi`)
       router.refresh()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Hata')
@@ -69,7 +115,10 @@ export function SevkiyatClient({ shipments: initShipments, stockGearboxes, shipp
       })
       await supabase.from('gearboxes').update({ status: 'montajlandi' }).eq('id', mountForm.gearbox_id)
       setMountOpen(false)
-      setMountForm({ gearbox_id: '', assembly_date: new Date().toISOString().split('T')[0], vehicle_plate: '', vin_number: '', customer_name: '', notes: '' })
+      setMountForm({
+        gearbox_id: '', assembly_date: new Date().toISOString().split('T')[0],
+        vehicle_plate: '', vin_number: '', customer_name: '', notes: '',
+      })
       toast.success('Montaj bilgisi kaydedildi')
       router.refresh()
     } catch (err: unknown) {
@@ -86,28 +135,34 @@ export function SevkiyatClient({ shipments: initShipments, stockGearboxes, shipp
         </div>
         <div className="flex gap-2">
           <Dialog open={mountOpen} onOpenChange={setMountOpen}>
-            <DialogTrigger asChild><Button variant="outline"><Car className="w-4 h-4 mr-2" />Montaj Bilgisi</Button></DialogTrigger>
+            <DialogTrigger asChild>
+              <Button variant="outline"><Car className="w-4 h-4 mr-2" />Montaj Bilgisi</Button>
+            </DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Araç Montaj Bilgisi</DialogTitle></DialogHeader>
               <div className="space-y-4 pt-2">
                 <div className="space-y-2">
                   <Label>Şanzıman</Label>
-                  <Select value={mountForm.gearbox_id} onValueChange={v => setMountForm({...mountForm, gearbox_id: v})}>
+                  <Select value={mountForm.gearbox_id} onValueChange={v => setMountForm({ ...mountForm, gearbox_id: v })}>
                     <SelectTrigger><SelectValue placeholder="Sevk edilmiş şanzıman seçin" /></SelectTrigger>
                     <SelectContent>
-                      {shippedGearboxes.map(g => <SelectItem key={g.id} value={g.id}>{g.serial_number} ({MODEL_LABELS[g.model as keyof typeof MODEL_LABELS]})</SelectItem>)}
+                      {shippedGearboxes.map(g => (
+                        <SelectItem key={g.id} value={g.id}>
+                          {g.serial_number} ({MODEL_LABELS[g.model as keyof typeof MODEL_LABELS]})
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Montaj Tarihi</Label><Input type="date" value={mountForm.assembly_date} onChange={e => setMountForm({...mountForm, assembly_date: e.target.value})} /></div>
-                  <div className="space-y-2"><Label>Müşteri</Label><Input value={mountForm.customer_name} onChange={e => setMountForm({...mountForm, customer_name: e.target.value})} /></div>
+                  <div className="space-y-2"><Label>Montaj Tarihi</Label><Input type="date" value={mountForm.assembly_date} onChange={e => setMountForm({ ...mountForm, assembly_date: e.target.value })} /></div>
+                  <div className="space-y-2"><Label>Müşteri</Label><Input value={mountForm.customer_name} onChange={e => setMountForm({ ...mountForm, customer_name: e.target.value })} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Araç Plakası</Label><Input value={mountForm.vehicle_plate} onChange={e => setMountForm({...mountForm, vehicle_plate: e.target.value})} placeholder="34 ABC 123" /></div>
-                  <div className="space-y-2"><Label>VIN / Şase No</Label><Input value={mountForm.vin_number} onChange={e => setMountForm({...mountForm, vin_number: e.target.value})} /></div>
+                  <div className="space-y-2"><Label>Araç Plakası</Label><Input value={mountForm.vehicle_plate} onChange={e => setMountForm({ ...mountForm, vehicle_plate: e.target.value })} placeholder="34 ABC 123" /></div>
+                  <div className="space-y-2"><Label>VIN / Şase No</Label><Input value={mountForm.vin_number} onChange={e => setMountForm({ ...mountForm, vin_number: e.target.value })} /></div>
                 </div>
-                <div className="space-y-2"><Label>Notlar</Label><Textarea value={mountForm.notes} onChange={e => setMountForm({...mountForm, notes: e.target.value})} /></div>
+                <div className="space-y-2"><Label>Notlar</Label><Textarea value={mountForm.notes} onChange={e => setMountForm({ ...mountForm, notes: e.target.value })} /></div>
                 <Button onClick={handleCreateMount} disabled={loading} className="w-full">
                   {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Car className="w-4 h-4 mr-2" />}Montaj Kaydet
                 </Button>
@@ -115,32 +170,63 @@ export function SevkiyatClient({ shipments: initShipments, stockGearboxes, shipp
             </DialogContent>
           </Dialog>
 
-          <Dialog open={shipOpen} onOpenChange={setShipOpen}>
-            <DialogTrigger asChild><Button><Plus className="w-4 h-4 mr-2" />Yeni Sevkiyat</Button></DialogTrigger>
-            <DialogContent>
+          <Dialog open={shipOpen} onOpenChange={v => { setShipOpen(v); if (!v) setSelectedIds(new Set()) }}>
+            <DialogTrigger asChild>
+              <Button><Plus className="w-4 h-4 mr-2" />Yeni Sevkiyat</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Yeni Sevkiyat</DialogTitle></DialogHeader>
               <div className="space-y-4 pt-2">
+                {/* Şanzıman Seçimi - Çoklu */}
                 <div className="space-y-2">
-                  <Label>Şanzıman</Label>
-                  <Select value={shipForm.gearbox_id} onValueChange={v => setShipForm({...shipForm, gearbox_id: v})}>
-                    <SelectTrigger><SelectValue placeholder="Stoktaki şanzıman seçin" /></SelectTrigger>
-                    <SelectContent>
-                      {stockGearboxes.map(g => <SelectItem key={g.id} value={g.id}>{g.serial_number} ({MODEL_LABELS[g.model as keyof typeof MODEL_LABELS]})</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center justify-between">
+                    <Label>Şanzımanlar ({selectedIds.size} seçili)</Label>
+                    <Button type="button" variant="ghost" size="sm" onClick={selectAll}>
+                      {selectedIds.size === stockGearboxes.length ? 'Seçimi Kaldır' : 'Tümünü Seç'}
+                    </Button>
+                  </div>
+                  {stockGearboxes.length === 0 ? (
+                    <p className="text-sm text-muted-foreground p-4 border rounded-lg text-center">Stoktaki şanzıman yok</p>
+                  ) : (
+                    <div className="border rounded-lg max-h-48 overflow-y-auto">
+                      {stockGearboxes.map(g => (
+                        <label
+                          key={g.id}
+                          className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/50 cursor-pointer border-b last:border-0"
+                        >
+                          <Checkbox
+                            checked={selectedIds.has(g.id)}
+                            onCheckedChange={() => toggleSelect(g.id)}
+                          />
+                          <span className="font-mono font-medium">{g.serial_number}</span>
+                          <Badge variant="outline" className="ml-auto">{MODEL_LABELS[g.model as keyof typeof MODEL_LABELS]}</Badge>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Sevk Tarihi</Label><Input type="date" value={shipForm.shipment_date} onChange={e => setShipForm({ ...shipForm, shipment_date: e.target.value })} /></div>
+                  <div className="space-y-2"><Label>Müşteri</Label><Input value={shipForm.customer_name} onChange={e => setShipForm({ ...shipForm, customer_name: e.target.value })} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Sevk Tarihi</Label><Input type="date" value={shipForm.shipment_date} onChange={e => setShipForm({...shipForm, shipment_date: e.target.value})} /></div>
-                  <div className="space-y-2"><Label>Müşteri</Label><Input value={shipForm.customer_name} onChange={e => setShipForm({...shipForm, customer_name: e.target.value})} /></div>
+                  <div className="space-y-2"><Label>İrsaliye No</Label><Input value={shipForm.waybill_number} onChange={e => setShipForm({ ...shipForm, waybill_number: e.target.value })} /></div>
+                  <div className="space-y-2"><Label>Fatura No</Label><Input value={shipForm.invoice_number} onChange={e => setShipForm({ ...shipForm, invoice_number: e.target.value })} /></div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>İrsaliye No</Label><Input value={shipForm.waybill_number} onChange={e => setShipForm({...shipForm, waybill_number: e.target.value})} /></div>
-                  <div className="space-y-2"><Label>Fatura No</Label><Input value={shipForm.invoice_number} onChange={e => setShipForm({...shipForm, invoice_number: e.target.value})} /></div>
-                </div>
-                <div className="space-y-2"><Label>Teslimat Adresi</Label><Input value={shipForm.delivery_address} onChange={e => setShipForm({...shipForm, delivery_address: e.target.value})} /></div>
-                <div className="space-y-2"><Label>Notlar</Label><Textarea value={shipForm.notes} onChange={e => setShipForm({...shipForm, notes: e.target.value})} /></div>
-                <Button onClick={handleCreateShipment} disabled={loading} className="w-full">
-                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Truck className="w-4 h-4 mr-2" />}Sevk Et
+                <div className="space-y-2"><Label>Teslimat Adresi</Label><Input value={shipForm.delivery_address} onChange={e => setShipForm({ ...shipForm, delivery_address: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Notlar</Label><Textarea value={shipForm.notes} onChange={e => setShipForm({ ...shipForm, notes: e.target.value })} /></div>
+
+                {selectedIds.size > 0 && (
+                  <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm text-blue-700 dark:text-blue-300">
+                    <Package className="w-4 h-4 shrink-0" />
+                    <span><strong>{selectedIds.size}</strong> şanzıman sevk edilecek</span>
+                  </div>
+                )}
+
+                <Button onClick={handleCreateShipment} disabled={loading || selectedIds.size === 0} className="w-full">
+                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Truck className="w-4 h-4 mr-2" />}
+                  {selectedIds.size > 0 ? `${selectedIds.size} Ürün Sevk Et` : 'Sevk Et'}
                 </Button>
               </div>
             </DialogContent>
@@ -148,7 +234,9 @@ export function SevkiyatClient({ shipments: initShipments, stockGearboxes, shipp
         </div>
       </div>
 
+      {/* Sevkiyat Tablosu */}
       <Card>
+        <CardHeader><CardTitle>Sevkiyat Kayıtları</CardTitle></CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
