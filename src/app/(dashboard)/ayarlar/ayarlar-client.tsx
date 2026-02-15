@@ -157,6 +157,29 @@ export function AyarlarClient({ settings, profiles: initProfiles, suppliers: ini
     toast.success(newStatus ? 'Kullanıcı aktif edildi' : 'Kullanıcı pasif edildi')
   }
 
+  const handleDeleteUser = async (user: Profile) => {
+    if (!confirm(`"${user.full_name}" kullanıcısını kalıcı olarak silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`)) return
+    setLoading(true)
+    try {
+      // Önce profili sil
+      const { error: profileErr } = await supabase.from('profiles').delete().eq('id', user.id)
+      if (profileErr) throw profileErr
+
+      // Auth kullanıcısını da sil (admin RPC ile)
+      try {
+        await supabase.rpc('admin_delete_user', { p_user_id: user.id })
+      } catch {
+        // Auth silme başarısız olsa bile profil silindi
+        console.warn('Auth user silme başarısız oldu, profil silindi')
+      }
+
+      setProfiles(profiles.filter(p => p.id !== user.id))
+      toast.success(`${user.full_name} kalıcı olarak silindi`)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Silme hatası - ilişkili kayıtlar olabilir')
+    } finally { setLoading(false) }
+  }
+
   // === TEDARİKÇİ ===
   const handleAddSupplier = async () => {
     setLoading(true)
@@ -270,6 +293,9 @@ export function AyarlarClient({ settings, profiles: initProfiles, suppliers: ini
                           </Button>
                           <Button variant="ghost" size="sm" title={p.is_active ? 'Pasif Et' : 'Aktif Et'} onClick={() => handleToggleActive(p)}>
                             {p.is_active ? <UserX className="w-4 h-4 text-red-500" /> : <UserCheck className="w-4 h-4 text-emerald-500" />}
+                          </Button>
+                          <Button variant="ghost" size="sm" title="Kalıcı Sil" onClick={() => handleDeleteUser(p)}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
                           </Button>
                         </div>
                       </TableCell>

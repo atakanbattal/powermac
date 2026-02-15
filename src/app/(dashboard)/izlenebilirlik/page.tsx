@@ -5,10 +5,10 @@ export default async function IzlenebilirlikPage({ searchParams }: { searchParam
   const { q, id } = await searchParams
   const supabase = await createClient()
 
-  // Tüm şanzımanları listele
+  // Tüm şanzımanları listele (sevk tarihi + montaj bilgisi dahil)
   const { data: gearboxes } = await supabase
     .from('gearboxes')
-    .select('id, serial_number, model, status, production_date, production_start, production_end, work_order, responsible_user:profiles(full_name)')
+    .select('id, serial_number, model, status, production_date, production_start, production_end, shipments(shipment_date), vehicle_assemblies(vehicle_plate, vin_number)')
     .order('created_at', { ascending: false })
     .limit(200)
 
@@ -35,6 +35,7 @@ export default async function IzlenebilirlikPage({ searchParams }: { searchParam
 
   // Detay görünümü
   let detail = null
+  let quarantineMap: Record<string, { id: string; reason: string; status: string; quarantined_at: string }> = {}
   if (id) {
     const { data: gearbox } = await supabase
       .from('gearboxes')
@@ -44,7 +45,7 @@ export default async function IzlenebilirlikPage({ searchParams }: { searchParam
         gearbox_part_mappings(
           id, quantity, mapped_at,
           material:materials!material_id(code, name, unit),
-          stock_entry:material_stock_entries(invoice_number, lot_number, supplier:suppliers(name))
+          stock_entry:material_stock_entries(invoice_number, lot_number, quarantine_id, supplier:suppliers(name))
         ),
         quality_inspections(
           id, overall_result, inspection_date, is_draft, comments,
@@ -62,6 +63,22 @@ export default async function IzlenebilirlikPage({ searchParams }: { searchParam
 
     if (gearbox) {
       detail = gearbox
+
+      // Karantina bilgilerini ayrıca çek
+      const mappings = (gearbox as { gearbox_part_mappings?: { stock_entry?: { quarantine_id?: string | null } | null }[] }).gearbox_part_mappings || []
+      const quarantineIds = mappings
+        .map(m => m.stock_entry?.quarantine_id)
+        .filter((qid): qid is string => !!qid)
+
+      if (quarantineIds.length > 0) {
+        const { data: quarantineData } = await supabase
+          .from('material_quarantine')
+          .select('id, reason, status, quarantined_at')
+          .in('id', quarantineIds)
+        if (quarantineData) {
+          quarantineMap = Object.fromEntries(quarantineData.map(q => [q.id, q]))
+        }
+      }
     }
   }
 
@@ -71,6 +88,7 @@ export default async function IzlenebilirlikPage({ searchParams }: { searchParam
       query={q || ''}
       searchResults={searchResults}
       detail={detail}
+      quarantineMap={quarantineMap}
     />
   )
 }

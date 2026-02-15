@@ -11,21 +11,30 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { STATUS_LABELS, STATUS_COLORS, ALLOWED_TRANSITIONS, MODEL_LABELS } from '@/lib/constants'
 import type { Gearbox, GearboxPartMapping, QualityInspection, Shipment, VehicleAssembly, NcrRecord, Attachment, AuditLog, GearboxStatus } from '@/lib/types'
-import { ArrowLeft, Calendar, User, FileText, Package, ShieldCheck, Truck, Car, AlertTriangle, History, Paperclip, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { ArrowLeft, Calendar, User, FileText, Package, ShieldCheck, ShieldAlert, Truck, Car, AlertTriangle, History, Paperclip, CheckCircle, XCircle, Clock } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { tr } from 'date-fns/locale'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
+interface QuarantineInfo {
+  id: string
+  reason: string
+  status: string
+  quarantined_at: string
+  decision_notes?: string | null
+}
+
 interface DetailProps {
   gearbox: Gearbox & { responsible_user?: { full_name: string } | null; bom_revision?: { id: string; model: string; revision_no: number } | null }
-  partMappings: (GearboxPartMapping & { material?: { code: string; name: string; unit: string; category: string } | null; stock_entry?: { invoice_number: string; lot_number: string; supplier?: { name: string } | null } | null })[]
+  partMappings: (GearboxPartMapping & { material?: { code: string; name: string; unit: string; category: string } | null; stock_entry?: { invoice_number: string; lot_number: string; quarantine_id?: string | null; supplier?: { name: string } | null } | null })[]
   inspections: (QualityInspection & { inspector?: { full_name: string } | null; control_plan?: { model: string; revision_no: number } | null; quality_measurements?: { measured_value: number | null; result: string; control_plan_item?: { name: string; nominal_value: number | null; lower_limit: number | null; upper_limit: number | null; unit: string; is_critical: boolean } | null }[] })[]
   shipments: Shipment[]
   assemblies: VehicleAssembly[]
   ncrs: (NcrRecord & { responsible_user?: { full_name: string } | null })[]
   attachments: Attachment[]
   auditLogs: (AuditLog & { user?: { full_name: string } | null })[]
+  quarantineMap: Record<string, QuarantineInfo>
 }
 
 const RESULT_ICON = {
@@ -34,7 +43,7 @@ const RESULT_ICON = {
   beklemede: <Clock className="w-4 h-4 text-amber-500" />,
 }
 
-export function GearboxDetailClient({ gearbox, partMappings, inspections, shipments, assemblies, ncrs, attachments, auditLogs }: DetailProps) {
+export function GearboxDetailClient({ gearbox, partMappings, inspections, shipments, assemblies, ncrs, attachments, auditLogs, quarantineMap }: DetailProps) {
   const [status, setStatus] = useState(gearbox.status)
   const router = useRouter()
   const supabase = createClient()
@@ -116,9 +125,14 @@ export function GearboxDetailClient({ gearbox, partMappings, inspections, shipme
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1"><Package className="w-3.5 h-3.5" />Parça Eşleştirme</div>
-            <p className="font-bold">{gearbox.parts_mapping_complete ? 'Tamamlandı' : 'Bekliyor'}</p>
-            <p className="text-xs text-muted-foreground">{partMappings.length} parça eşleştirildi</p>
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1"><Package className="w-3.5 h-3.5" />Kullanılan Parçalar</div>
+            <p className="font-bold">{partMappings.length > 0 ? `${partMappings.length} parça` : 'Veri yok'}</p>
+            {partMappings.some(pm => !!pm.stock_entry?.quarantine_id) && (
+              <p className="text-xs text-amber-600 font-medium mt-1">
+                <AlertTriangle className="w-3 h-3 inline mr-1" />
+                {partMappings.filter(pm => !!pm.stock_entry?.quarantine_id).length} karantina parça
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -136,12 +150,43 @@ export function GearboxDetailClient({ gearbox, partMappings, inspections, shipme
 
         {/* Parts Tab */}
         <TabsContent value="parts">
+          {/* Karantina Uyarısı */}
+          {partMappings.some(pm => !!pm.stock_entry?.quarantine_id) && (
+            <div className="mb-4 rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-amber-800">Karantina Kaynaklı Parça Uyarısı</h3>
+                  <p className="text-sm text-amber-700 mt-1">
+                    Bu şanzımanda <strong>{partMappings.filter(pm => !!pm.stock_entry?.quarantine_id).length}</strong> adet karantinadan kullanıma alınmış parça bulunmaktadır.
+                    İleride bir sorun tespit edilirse bu parçaların izlenebilirliği sağlanmıştır.
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {partMappings.filter(pm => !!pm.stock_entry?.quarantine_id).map(pm => {
+                      const qInfo = pm.stock_entry?.quarantine_id ? quarantineMap[pm.stock_entry.quarantine_id] : null
+                      return (
+                        <div key={pm.id} className="flex items-center gap-3 bg-white/60 rounded-lg px-3 py-2 text-sm">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span className="font-mono font-medium text-amber-900">{pm.material?.code}</span>
+                          <span className="text-amber-800">{pm.material?.name}</span>
+                          {qInfo?.reason && (
+                            <span className="text-amber-600 ml-auto">Red nedeni: <strong>{qInfo.reason}</strong></span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Eşleştirilen Parçalar</CardTitle>
-              <Link href={`/eslestirme/${gearbox.id}`}>
-                <Button size="sm"><Package className="w-4 h-4 mr-1" />Parça Eşleştir</Button>
-              </Link>
+            <CardHeader>
+              <CardTitle>Kullanılan Parçalar (BOM Otomatik Eşleştirme)</CardTitle>
+              <p className="text-sm text-muted-foreground">Üretim başlatıldığında BOM reçetesine göre otomatik olarak stoktan düşülen parçalar</p>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -151,24 +196,37 @@ export function GearboxDetailClient({ gearbox, partMappings, inspections, shipme
                     <TableHead>Parça Adı</TableHead>
                     <TableHead>İrsaliye / Lot</TableHead>
                     <TableHead>Tedarikçi</TableHead>
+                    <TableHead>Durum</TableHead>
                     <TableHead className="text-right">Miktar</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {partMappings.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Henüz parça eşleştirilmedi</TableCell></TableRow>
-                  ) : partMappings.map(pm => (
-                    <TableRow key={pm.id}>
-                      <TableCell className="font-mono">{pm.material?.code}</TableCell>
-                      <TableCell className="font-medium">{pm.material?.name}</TableCell>
-                      <TableCell>
-                        <span className="font-mono text-xs">{pm.stock_entry?.invoice_number || '-'}</span>
-                        {pm.stock_entry?.lot_number && <span className="text-xs text-muted-foreground ml-2">Lot: {pm.stock_entry.lot_number}</span>}
-                      </TableCell>
-                      <TableCell>{pm.stock_entry?.supplier?.name || '-'}</TableCell>
-                      <TableCell className="text-right font-bold">{pm.quantity} {pm.material?.unit}</TableCell>
-                    </TableRow>
-                  ))}
+                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">BOM otomatik eşleştirme yapılmamış veya stokta yeterli malzeme bulunamamış</TableCell></TableRow>
+                  ) : partMappings.map(pm => {
+                    const fromQuarantine = !!pm.stock_entry?.quarantine_id
+                    return (
+                      <TableRow key={pm.id} className={fromQuarantine ? 'bg-amber-50/50' : ''}>
+                        <TableCell className="font-mono">{pm.material?.code}</TableCell>
+                        <TableCell className="font-medium">{pm.material?.name}</TableCell>
+                        <TableCell>
+                          <span className="font-mono text-xs">{pm.stock_entry?.invoice_number || '-'}</span>
+                          {pm.stock_entry?.lot_number && <span className="text-xs text-muted-foreground ml-2">Lot: {pm.stock_entry.lot_number}</span>}
+                        </TableCell>
+                        <TableCell>{pm.stock_entry?.supplier?.name || '-'}</TableCell>
+                        <TableCell>
+                          {fromQuarantine ? (
+                            <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-300">
+                              <AlertTriangle className="w-3 h-3 mr-1 inline" />Karantina
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Normal</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-bold">{pm.quantity} {pm.material?.unit}</TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </CardContent>

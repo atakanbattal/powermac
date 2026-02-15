@@ -9,25 +9,25 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { MODEL_LABELS } from '@/lib/constants'
 import type { Shipment } from '@/lib/types'
-import { Plus, Truck, Car, Loader2, Package, CheckCircle } from 'lucide-react'
+import { Plus, Truck, Loader2, Package } from 'lucide-react'
 import { toast } from 'sonner'
+import { DateRangeFilter } from '@/components/date-range-filter'
 
 interface Props {
   shipments: (Shipment & { gearbox?: { serial_number: string; model: string; status: string } | null })[]
   stockGearboxes: { id: string; serial_number: string; model: string }[]
-  shippedGearboxes: { id: string; serial_number: string; model: string }[]
+  dateRangeStart: string
+  dateRangeEnd: string
 }
 
-export function SevkiyatClient({ shipments: initShipments, stockGearboxes, shippedGearboxes }: Props) {
+export function SevkiyatClient({ shipments: initShipments, stockGearboxes, dateRangeStart, dateRangeEnd }: Props) {
   const [shipments, setShipments] = useState(initShipments)
   const [shipOpen, setShipOpen] = useState(false)
-  const [mountOpen, setMountOpen] = useState(false)
   const [loading, setLoading] = useState(false)
 
   // Çoklu seçim
@@ -35,10 +35,6 @@ export function SevkiyatClient({ shipments: initShipments, stockGearboxes, shipp
   const [shipForm, setShipForm] = useState({
     shipment_date: new Date().toISOString().split('T')[0],
     customer_name: '', delivery_address: '', waybill_number: '', invoice_number: '', notes: '',
-  })
-  const [mountForm, setMountForm] = useState({
-    gearbox_id: '', assembly_date: new Date().toISOString().split('T')[0],
-    vehicle_plate: '', vin_number: '', customer_name: '', notes: '',
   })
   const router = useRouter()
   const supabase = createClient()
@@ -104,71 +100,15 @@ export function SevkiyatClient({ shipments: initShipments, stockGearboxes, shipp
     } finally { setLoading(false) }
   }
 
-  const handleCreateMount = async () => {
-    setLoading(true)
-    try {
-      if (!mountForm.gearbox_id) throw new Error('Şanzıman seçin')
-      const { data: { user } } = await supabase.auth.getUser()
-      await supabase.from('vehicle_assemblies').insert({
-        ...mountForm,
-        recorded_by: user?.id,
-      })
-      await supabase.from('gearboxes').update({ status: 'montajlandi' }).eq('id', mountForm.gearbox_id)
-      setMountOpen(false)
-      setMountForm({
-        gearbox_id: '', assembly_date: new Date().toISOString().split('T')[0],
-        vehicle_plate: '', vin_number: '', customer_name: '', notes: '',
-      })
-      toast.success('Montaj bilgisi kaydedildi')
-      router.refresh()
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Hata')
-    } finally { setLoading(false) }
-  }
-
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Sevkiyat & Montaj</h1>
-          <p className="text-sm text-muted-foreground mt-1">Sevkiyat ve araç montaj bilgileri</p>
+          <h1 className="text-2xl font-bold">Sevkiyat</h1>
+          <p className="text-sm text-muted-foreground mt-1">Sevkiyat kayıtları ve takibi</p>
         </div>
-        <div className="flex gap-2">
-          <Dialog open={mountOpen} onOpenChange={setMountOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline"><Car className="w-4 h-4 mr-2" />Montaj Bilgisi</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Araç Montaj Bilgisi</DialogTitle></DialogHeader>
-              <div className="space-y-4 pt-2">
-                <div className="space-y-2">
-                  <Label>Şanzıman</Label>
-                  <Select value={mountForm.gearbox_id} onValueChange={v => setMountForm({ ...mountForm, gearbox_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Sevk edilmiş şanzıman seçin" /></SelectTrigger>
-                    <SelectContent>
-                      {shippedGearboxes.map(g => (
-                        <SelectItem key={g.id} value={g.id}>
-                          {g.serial_number} ({MODEL_LABELS[g.model as keyof typeof MODEL_LABELS]})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Montaj Tarihi</Label><Input type="date" value={mountForm.assembly_date} onChange={e => setMountForm({ ...mountForm, assembly_date: e.target.value })} /></div>
-                  <div className="space-y-2"><Label>Müşteri</Label><Input value={mountForm.customer_name} onChange={e => setMountForm({ ...mountForm, customer_name: e.target.value })} /></div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Araç Plakası</Label><Input value={mountForm.vehicle_plate} onChange={e => setMountForm({ ...mountForm, vehicle_plate: e.target.value })} placeholder="34 ABC 123" /></div>
-                  <div className="space-y-2"><Label>VIN / Şase No</Label><Input value={mountForm.vin_number} onChange={e => setMountForm({ ...mountForm, vin_number: e.target.value })} /></div>
-                </div>
-                <div className="space-y-2"><Label>Notlar</Label><Textarea value={mountForm.notes} onChange={e => setMountForm({ ...mountForm, notes: e.target.value })} /></div>
-                <Button onClick={handleCreateMount} disabled={loading} className="w-full">
-                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Car className="w-4 h-4 mr-2" />}Montaj Kaydet
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+        <div className="flex gap-2 items-center flex-wrap">
+          <DateRangeFilter start={dateRangeStart} end={dateRangeEnd} label="Sevk Tarihi" />
 
           <Dialog open={shipOpen} onOpenChange={v => { setShipOpen(v); if (!v) setSelectedIds(new Set()) }}>
             <DialogTrigger asChild>

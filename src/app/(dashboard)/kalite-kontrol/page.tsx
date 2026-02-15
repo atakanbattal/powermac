@@ -1,8 +1,28 @@
 import { createClient } from '@/lib/supabase/server'
 import { KaliteKontrolClient } from './kalite-kontrol-client'
 
-export default async function KaliteKontrolPage() {
+function getDateRange(searchParams: Promise<{ start?: string; end?: string }>) {
+  return async () => {
+    const params = await searchParams
+    const now = new Date()
+    if (params.start && params.end) {
+      const s = new Date(params.start)
+      const e = new Date(params.end)
+      if (!isNaN(s.getTime()) && !isNaN(e.getTime())) return { start: params.start, end: params.end }
+    }
+    const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+    return { start, end }
+  }
+}
+
+export default async function KaliteKontrolPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ start?: string; end?: string }>
+}) {
   const supabase = await createClient()
+  const { start, end } = await getDateRange(searchParams)()
 
   const [
     { data: inspections },
@@ -18,6 +38,8 @@ export default async function KaliteKontrolPage() {
         inspector:profiles(full_name),
         control_plan:control_plan_revisions(model, revision_no, target_name)
       `)
+      .gte('inspection_date', start)
+      .lte('inspection_date', end)
       .order('created_at', { ascending: false })
       .limit(100),
     supabase
@@ -43,6 +65,8 @@ export default async function KaliteKontrolPage() {
       pendingGearboxes={pendingGearboxes || []}
       controlPlans={controlPlans || []}
       materials={materials || []}
+      dateRangeStart={start}
+      dateRangeEnd={end}
     />
   )
 }

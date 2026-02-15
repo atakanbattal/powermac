@@ -146,7 +146,7 @@ export function YeniKontrolClient({ gearbox, controlPlan }: Props) {
         <AlertTriangle className="w-12 h-12 mx-auto text-amber-500 mb-4" />
         <h2 className="text-lg font-bold">Kontrol Planı Bulunamadı</h2>
         <p className="text-muted-foreground mt-2">{MODEL_LABELS[gearbox.model]} için aktif kontrol planı tanımlı değil.</p>
-        <Link href="/kontrol-plani"><Button className="mt-4">Kontrol Planı Oluştur</Button></Link>
+        <Link href="/kontrol-plani"><Button className="mt-4">Kontrol Planları</Button></Link>
       </div>
     )
   }

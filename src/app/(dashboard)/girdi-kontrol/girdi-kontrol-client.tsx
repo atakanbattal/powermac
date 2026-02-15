@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -16,9 +15,11 @@ import { Textarea } from '@/components/ui/textarea'
 import type { ControlPlanRevision, ControlPlanItem, InspectionResult } from '@/lib/types'
 import {
   ShieldCheck, ClipboardCheck, Eye, CheckCircle, XCircle, Clock,
-  Star, Loader2, Send, Save, ArrowLeft, Package, AlertTriangle
+  Star, Loader2, Send, Save, ArrowLeft, Package, AlertTriangle, ShieldAlert,
+  RotateCcw, CheckCircle2
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { DateRangeFilter } from '@/components/date-range-filter'
 
 interface MaterialPlan extends ControlPlanRevision {
   control_plan_items: ControlPlanItem[]
@@ -36,10 +37,24 @@ interface StockEntry {
   supplier?: { name: string } | null
 }
 
+interface Receipt {
+  id: string
+  material_id: string
+  supplier_id?: string
+  invoice_number?: string
+  lot_number?: string
+  quantity: number
+  receipt_date: string
+  status: string
+  material?: { id: string; code: string; name: string; unit: string } | null
+  supplier?: { name: string } | null
+}
+
 interface InspectionRecord {
   id: string
   material_id: string
   stock_entry_id?: string
+  receipt_id?: string
   overall_result: string
   inspection_date: string
   comments?: string
@@ -60,11 +75,36 @@ interface InspectionRecord {
   }[]
 }
 
+interface QuarantineAction {
+  id?: string
+  decision: string
+  notes?: string
+  decided_at: string
+  decided_by?: { full_name: string } | null
+}
+
+interface QuarantineItem {
+  id: string
+  material_id: string
+  quantity: number
+  reason?: string
+  lot_number?: string
+  invoice_number?: string
+  quarantined_at: string
+  status?: string
+  material?: { code: string; name: string; unit: string } | null
+  quarantine_actions?: QuarantineAction[]
+}
+
 interface Props {
   materialPlans: MaterialPlan[]
+  recentReceipts: Receipt[]
   recentEntries: StockEntry[]
   inspections: InspectionRecord[]
   materials: { id: string; code: string; name: string; unit: string }[]
+  quarantineItems: QuarantineItem[]
+  dateRangeStart: string
+  dateRangeEnd: string
 }
 
 const RESULT_ICON: Record<string, React.ReactNode> = {
@@ -91,13 +131,18 @@ interface MeasurementEntry {
   result: InspectionResult
 }
 
-export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, materials }: Props) {
+export function GirdiKontrolClient({ materialPlans, recentReceipts, recentEntries, inspections, materials, quarantineItems: initQuarantine, dateRangeStart, dateRangeEnd }: Props) {
   const [inspMode, setInspMode] = useState(false)
   const [detailInsp, setDetailInsp] = useState<InspectionRecord | null>(null)
   const [loading, setLoading] = useState(false)
+  const [quarantineItems, setQuarantineItems] = useState(initQuarantine)
+  const [quarantineModalOpen, setQuarantineModalOpen] = useState(false)
+  const [quarantineNotesById, setQuarantineNotesById] = useState<Record<string, string>>({})
+  useEffect(() => { setQuarantineItems(initQuarantine) }, [initQuarantine])
 
-  // Kontrol başlat
+  // Kontrol başlat - tesellümden (receipt) seçim
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>('')
+  const [selectedReceiptId, setSelectedReceiptId] = useState<string>('')
   const [selectedEntryId, setSelectedEntryId] = useState<string>('')
   const [inspPlan, setInspPlan] = useState<MaterialPlan | null>(null)
   const [measurements, setMeasurements] = useState<Record<string, MeasurementEntry>>({})
@@ -125,13 +170,13 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
     }
   }
 
-  const startInspection = (entry?: StockEntry) => {
-    if (entry?.material) {
-      const matId = entry.material.id
+  const startInspection = (receipt?: Receipt) => {
+    if (receipt) {
+      const matId = receipt.material_id
       setSelectedMaterialId(matId)
-      setSelectedEntryId(entry.id)
-      setInspQty(String(entry.quantity))
-      // Plan bul ve set et
+      setSelectedReceiptId(receipt.id)
+      setSelectedEntryId('')
+      setInspQty(String(receipt.quantity))
       const plan = materialPlans.find(p => p.material_id === matId)
       if (plan && plan.control_plan_items.length > 0) {
         setInspPlan(plan)
@@ -182,18 +227,18 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
     try {
       const { data: { user } } = await supabase.auth.getUser()
       const finalResult = isDraft ? 'beklemede' : result
-
-      const entry = recentEntries.find(e => e.id === selectedEntryId)
+      const receipt = recentReceipts.find(r => r.id === selectedReceiptId)
 
       const { data: inspection, error } = await supabase.from('material_inspections').insert({
         material_id: selectedMaterialId,
-        stock_entry_id: selectedEntryId || null,
+        stock_entry_id: null,
+        receipt_id: selectedReceiptId || null,
         control_plan_id: inspPlan.id,
         inspector_id: user?.id,
         overall_result: finalResult,
         comments: inspComments,
-        lot_number: entry?.lot_number || null,
-        invoice_number: entry?.invoice_number || null,
+        lot_number: receipt?.lot_number || null,
+        invoice_number: receipt?.invoice_number || null,
         quantity_inspected: inspQty ? parseFloat(inspQty) : null,
         is_draft: isDraft,
       }).select().single()
@@ -208,18 +253,57 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
       const { error: mError } = await supabase.from('material_measurements').insert(measurementRows)
       if (mError) throw mError
 
-      if (!isDraft) {
+      if (!isDraft && receipt) {
         if (finalResult === 'ok') {
-          toast.success('Girdi kontrolü GEÇTİ')
+          // Onaylı: Stok girişi oluştur, stoğu güncelle
+          const qty = inspQty ? parseFloat(inspQty) : receipt.quantity
+          const { data: stockEntry, error: entryErr } = await supabase.from('material_stock_entries').insert({
+            material_id: selectedMaterialId,
+            supplier_id: receipt.supplier_id || null,
+            invoice_number: receipt.invoice_number || null,
+            lot_number: receipt.lot_number || null,
+            quantity: qty,
+            remaining_quantity: qty,
+            entry_date: receipt.receipt_date || new Date().toISOString().split('T')[0],
+            created_by: user?.id,
+          }).select().single()
+          if (entryErr) throw entryErr
+
+          await supabase.rpc('update_material_stock', { p_material_id: selectedMaterialId, p_quantity: qty, p_movement_type: 'giris' })
+          await supabase.from('stock_movements').insert({
+            material_id: selectedMaterialId,
+            stock_entry_id: stockEntry.id,
+            movement_type: 'giris',
+            quantity: qty,
+            notes: `Girdi kontrol onayı - İrs: ${receipt.invoice_number || '-'}, Lot: ${receipt.lot_number || '-'}`,
+            created_by: user?.id,
+          })
+          await supabase.from('material_receipts').update({ status: 'onaylandi' }).eq('id', receipt.id)
+          toast.success('Girdi kontrolü GEÇTİ - Malzeme stoğa eklendi')
         } else {
-          toast.warning('Girdi kontrolü RED - Malzeme kullanıma uygun değil')
+          // Red: Karantinaya gönder
+          const qty = inspQty ? parseFloat(inspQty) : receipt.quantity
+          await supabase.from('material_quarantine').insert({
+            material_id: selectedMaterialId,
+            receipt_id: receipt.id,
+            inspection_id: inspection.id,
+            quantity: qty,
+            reason: inspComments || 'Girdi kontrol RED',
+            lot_number: receipt.lot_number || null,
+            invoice_number: receipt.invoice_number || null,
+            status: 'karantinada',
+          })
+          await supabase.from('material_receipts').update({ status: 'reddedildi' }).eq('id', receipt.id)
+          toast.warning('Girdi kontrolü RED - Malzeme karantinaya alındı')
         }
-      } else {
+      } else if (isDraft) {
+        await supabase.from('material_receipts').update({ status: 'kontrol_bekliyor' }).eq('id', selectedReceiptId).maybeSingle()
         toast.success('Taslak kaydedildi')
       }
 
       setInspMode(false)
       setSelectedMaterialId('')
+      setSelectedReceiptId('')
       setSelectedEntryId('')
       setInspPlan(null)
       setMeasurements({})
@@ -231,6 +315,60 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
     } finally { setLoading(false) }
   }
 
+  // Karantina kararı (İade / Kullan)
+  const handleQuarantineDecision = async (decision: 'iade' | 'kullan', item: QuarantineItem) => {
+    setLoading(true)
+    const notes = quarantineNotesById[item.id] || ''
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      await supabase.from('material_quarantine_actions').insert({
+        quarantine_id: item.id,
+        decision,
+        notes: notes || null,
+        decided_by: user?.id,
+      })
+      const newStatus = decision === 'iade' ? 'iade_edildi' : 'kullanildi'
+      const { error: updateErr } = await supabase.from('material_quarantine').update({ status: newStatus }).eq('id', item.id)
+      if (updateErr) throw updateErr
+      if (decision === 'kullan') {
+        const qty = item.quantity
+        const entryNotes = `Karantina - Kullan kararı: ${notes || '-'}`
+        const { data: entryData } = await supabase.from('material_stock_entries').insert({
+          material_id: item.material_id,
+          quantity: qty,
+          remaining_quantity: qty,
+          entry_date: new Date().toISOString().split('T')[0],
+          invoice_number: item.invoice_number || null,
+          lot_number: item.lot_number || null,
+          quarantine_id: item.id,
+          notes: entryNotes,
+          created_by: user?.id,
+        }).select('id').single()
+        if (entryData) {
+          await supabase.rpc('update_material_stock', { p_material_id: item.material_id, p_quantity: qty, p_movement_type: 'giris' })
+          await supabase.from('stock_movements').insert({
+            material_id: item.material_id,
+            stock_entry_id: entryData.id,
+            movement_type: 'giris',
+            quantity: qty,
+            notes: `Karantina kullan kararı - İrs: ${item.invoice_number || '-'}, Lot: ${item.lot_number || '-'}`,
+            created_by: user?.id,
+          })
+        }
+      }
+      const remaining = quarantineItems.filter(q => q.id !== item.id)
+      setQuarantineItems(remaining)
+      setQuarantineNotesById(prev => { const next = { ...prev }; delete next[item.id]; return next })
+      if (remaining.length === 0) setQuarantineModalOpen(false)
+      toast.success(decision === 'iade' ? 'Malzeme iade edildi olarak işaretlendi' : 'Malzeme kullanıma alındı ve stoğa eklendi')
+      // Kısa gecikme ile refresh - DB güncellenmesi tamamlansın
+      await new Promise(r => setTimeout(r, 500))
+      router.refresh()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Karar kaydedilemedi')
+    } finally { setLoading(false) }
+  }
+
   // Materials with control plans
   const materialsWithPlans = materials.filter(m => materialPlans.some(p => p.material_id === m.id))
   const materialsWithoutPlans = materials.filter(m => !materialPlans.some(p => p.material_id === m.id))
@@ -239,7 +377,7 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
   if (inspMode && inspPlan) {
     const items = inspPlan.control_plan_items
     const selMat = materials.find(m => m.id === selectedMaterialId)
-    const selEntry = recentEntries.find(e => e.id === selectedEntryId)
+    const selReceipt = recentReceipts.find(r => r.id === selectedReceiptId)
 
     return (
       <div className="space-y-6">
@@ -250,7 +388,7 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
           <h1 className="text-2xl font-bold">Girdi Kontrol</h1>
           <div className="flex items-center gap-4 mt-2">
             <Badge variant="outline" className="font-mono text-base px-3 py-1">{selMat?.code} - {selMat?.name}</Badge>
-            {selEntry && <Badge variant="secondary">İrsaliye: {selEntry.invoice_number || '-'} | Lot: {selEntry.lot_number || '-'}</Badge>}
+            {selReceipt && <Badge variant="secondary">İrsaliye: {selReceipt.invoice_number || '-'} | Lot: {selReceipt.lot_number || '-'}</Badge>}
           </div>
         </div>
 
@@ -422,9 +560,119 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
           <h1 className="text-2xl font-bold">Girdi Kontrol</h1>
           <p className="text-sm text-muted-foreground mt-1">Gelen malzeme muayene ve kalite kontrolü</p>
         </div>
-        <Button onClick={() => setInspMode(true)}>
-          <ClipboardCheck className="w-4 h-4 mr-2" />Kontrol Başlat
-        </Button>
+        <div className="flex items-center gap-2">
+          <DateRangeFilter start={dateRangeStart} end={dateRangeEnd} label="Kontrol Tarihi" />
+          <Button variant="outline" className={quarantineItems.length > 0 ? 'border-red-300 text-red-700' : ''} onClick={() => setQuarantineModalOpen(true)}>
+            <ShieldAlert className="w-4 h-4 mr-2" />Karantina ({quarantineItems.length})
+          </Button>
+          {/* Karantina Modal - Full overlay */}
+          {quarantineModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setQuarantineModalOpen(false); setQuarantineNotesById({}) }}>
+              <div
+                className="bg-background w-[90vw] max-w-[900px] min-h-[500px] max-h-[85vh] rounded-xl border shadow-2xl flex flex-col"
+                onClick={e => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-8 py-6 border-b">
+                  <div>
+                    <h2 className="text-2xl font-bold flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                        <ShieldAlert className="w-5 h-5 text-red-600" />
+                      </div>
+                      Karantina Alanı
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-2 ml-[52px]">
+                      Red edilen malzemeler. Her malzeme için <strong>İade Et</strong> veya <strong>Kullanıma Al</strong> kararı verin.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { setQuarantineModalOpen(false); setQuarantineNotesById({}) }}
+                    className="rounded-full p-2 hover:bg-muted transition-colors"
+                  >
+                    <XCircle className="w-6 h-6 text-muted-foreground" />
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto px-8 py-6">
+                  {quarantineItems.length === 0 ? (
+                    <div className="py-20 text-center text-muted-foreground">
+                      <ShieldAlert className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                      <p className="text-lg">Karantinada malzeme yok</p>
+                      <p className="text-sm mt-1">Red edilen malzemeler burada görünecek.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {quarantineItems.map(q => (
+                        <div key={q.id} className="rounded-xl border-2 border-red-200 bg-red-50/40 p-6">
+                          {/* Malzeme bilgisi */}
+                          <div className="flex items-start justify-between gap-6 mb-5">
+                            <div className="flex-1">
+                              <h3 className="text-xl font-bold text-foreground">{q.material?.code} - {q.material?.name}</h3>
+                              <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
+                                <span><strong>Miktar:</strong> {q.quantity} {q.material?.unit}</span>
+                                <span><strong>İrsaliye:</strong> {q.invoice_number || '-'}</span>
+                                <span><strong>Lot:</strong> {q.lot_number || '-'}</span>
+                              </div>
+                              <p className="text-sm text-red-600 font-semibold mt-2">Red nedeni: {q.reason || '-'}</p>
+                            </div>
+                            <Badge variant="destructive" className="text-sm px-3 py-1 shrink-0">Karantinada</Badge>
+                          </div>
+
+                          {/* Karar Notu */}
+                          <div className="mb-5">
+                            <Label className="text-sm font-medium text-foreground">Karar Notu (opsiyonel)</Label>
+                            <Textarea
+                              value={quarantineNotesById[q.id] || ''}
+                              onChange={e => setQuarantineNotesById(prev => ({ ...prev, [q.id]: e.target.value }))}
+                              placeholder="Karar gerekçesini yazın..."
+                              rows={2}
+                              className="mt-2 resize-none bg-white"
+                            />
+                          </div>
+
+                          {/* Karar Butonları */}
+                          <div className="grid grid-cols-2 gap-4">
+                            <Button
+                              variant="outline"
+                              size="lg"
+                              className="h-14 text-base font-semibold border-2 border-amber-400 text-amber-700 hover:bg-amber-50 hover:border-amber-500"
+                              onClick={() => handleQuarantineDecision('iade', q)}
+                              disabled={loading}
+                            >
+                              {loading ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <RotateCcw className="w-5 h-5 mr-2" />}
+                              Tedarikçiye İade Et
+                            </Button>
+                            <button
+                              className="flex-1 h-14 rounded-md text-base font-semibold inline-flex items-center justify-center shadow-md disabled:opacity-50"
+                              style={{ backgroundColor: '#059669', color: '#ffffff' }}
+                              onClick={() => handleQuarantineDecision('kullan', q)}
+                              disabled={loading}
+                            >
+                              {loading ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <CheckCircle2 className="w-5 h-5 mr-2" />}
+                              Kullanıma Al (Stoğa Ekle)
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="px-8 py-4 border-t bg-muted/30 rounded-b-xl">
+                  <p className="text-xs text-muted-foreground">
+                    Toplam <strong>{quarantineItems.length}</strong> malzeme karantinada.
+                    Kullanıma alınan malzemeler otomatik olarak stoğa eklenir.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          <Button onClick={() => setInspMode(true)} disabled={recentReceipts.filter(r => r.status === 'teslim_alindi' || r.status === 'kontrol_bekliyor').length === 0}>
+            <ClipboardCheck className="w-4 h-4 mr-2" />Kontrol Başlat
+          </Button>
+        </div>
       </div>
 
       {/* Kontrol planı olmayan malzeme uyarısı */}
@@ -434,70 +682,56 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
             <p className="text-sm text-amber-700 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               {materialsWithoutPlans.length} malzemenin kontrol planı yok.
-              Kalite Kontrol &gt; Kontrol Planları sekmesinden malzeme kontrol planı oluşturabilirsiniz.
+              Kontrol Planları sayfasından malzeme kontrol planı oluşturabilirsiniz.
             </p>
           </CardContent>
         </Card>
       )}
 
-      {/* Kontrol başlat modali (inline) */}
+      {/* Kontrol başlat - Tesellümden seçim */}
       {inspMode && !inspPlan && (
         <Card className="border-primary">
-          <CardHeader><CardTitle>Kontrol Başlat</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Kontrol Başlat - Tesellümden Seçin</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Malzeme Seçin</Label>
-                <Select value={selectedMaterialId} onValueChange={handleMaterialSelect}>
-                  <SelectTrigger><SelectValue placeholder="Malzeme seçin" /></SelectTrigger>
-                  <SelectContent>
-                    {materials.map(m => {
-                      const hasPlan = materialPlans.some(p => p.material_id === m.id)
+            <p className="text-sm text-muted-foreground">Malzemeler önce Tesellüm sayfasından teslim alınmalı. Aşağıdan tesellüme alınmış malzemeyi seçip kontrolü başlatın.</p>
+            <div className="space-y-2">
+              <Label>Tesellüm Kaydı Seçin</Label>
+              <Select value={selectedReceiptId} onValueChange={v => { const r = recentReceipts.find(x => x.id === v); if (r) startInspection(r) }}>
+                <SelectTrigger><SelectValue placeholder="Tesellüm kaydı seçin" /></SelectTrigger>
+                <SelectContent>
+                  {recentReceipts
+                    .filter(r => r.status === 'teslim_alindi' || r.status === 'kontrol_bekliyor')
+                    .map(r => {
+                      const hasPlan = materialPlans.some(p => p.material_id === r.material_id)
                       return (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.code} - {m.name} {!hasPlan ? '(Plan yok)' : ''}
+                        <SelectItem key={r.id} value={r.id} disabled={!hasPlan}>
+                          {r.material?.code} - {r.material?.name} | İrs: {r.invoice_number || '-'} / Lot: {r.lot_number || '-'} ({r.quantity} {r.material?.unit}) {!hasPlan ? '(Plan yok)' : ''}
                         </SelectItem>
                       )
                     })}
-                  </SelectContent>
-                </Select>
-                {selectedMaterialId && !inspPlan && (
-                  <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 p-2 rounded">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <span>Bu malzeme için kontrol planı yok. Kalite Kontrol &gt; Kontrol Planları sekmesinden oluşturun.</span>
-                  </div>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label>Stok Girişi (opsiyonel)</Label>
-                <Select value={selectedEntryId} onValueChange={v => { setSelectedEntryId(v); const entry = recentEntries.find(e => e.id === v); if (entry) setInspQty(String(entry.quantity)) }}>
-                  <SelectTrigger><SelectValue placeholder="İrsaliye/Lot seçin" /></SelectTrigger>
-                  <SelectContent>
-                    {recentEntries
-                      .filter(e => !selectedMaterialId || e.material_id === selectedMaterialId)
-                      .map(e => (
-                        <SelectItem key={e.id} value={e.id}>
-                          İrs: {e.invoice_number || '-'} / Lot: {e.lot_number || '-'} ({e.quantity} {e.material?.unit})
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                </SelectContent>
+              </Select>
+              {recentReceipts.filter(r => r.status === 'teslim_alindi' || r.status === 'kontrol_bekliyor').length === 0 && (
+                <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 p-2 rounded">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>Tesellüm bekleyen malzeme yok. Tesellüm sayfasından tesellüm girişi yapın.</span>
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => { setInspMode(false); setSelectedMaterialId(''); setSelectedEntryId('') }}>İptal</Button>
+              <Button variant="outline" onClick={() => { setInspMode(false); setSelectedMaterialId(''); setSelectedReceiptId('') }}>İptal</Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      <Tabs defaultValue="entries">
+      <Tabs defaultValue="receipts">
         <TabsList>
-          <TabsTrigger value="entries"><Package className="w-4 h-4 mr-1" />Son Stok Girişleri</TabsTrigger>
+          <TabsTrigger value="receipts"><Package className="w-4 h-4 mr-1" />Tesellüm Bekleyenler</TabsTrigger>
           <TabsTrigger value="history"><ShieldCheck className="w-4 h-4 mr-1" />Kontrol Kayıtları</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="entries">
+        <TabsContent value="receipts">
           <Card>
             <CardContent className="p-0">
               <Table>
@@ -508,24 +742,24 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
                     <TableHead>Lot</TableHead>
                     <TableHead>Tedarikçi</TableHead>
                     <TableHead className="text-right">Miktar</TableHead>
-                    <TableHead>Tarih</TableHead>
+                    <TableHead>Teslim Tarihi</TableHead>
                     <TableHead>Kontrol Planı</TableHead>
                     <TableHead className="text-right">İşlem</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {recentEntries.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Stok girişi yok</TableCell></TableRow>
-                  ) : recentEntries.map(e => {
-                    const hasPlan = materialPlans.some(p => p.material_id === e.material_id)
+                  {recentReceipts.filter(r => r.status === 'teslim_alindi' || r.status === 'kontrol_bekliyor').length === 0 ? (
+                    <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Tesellüm bekleyen malzeme yok. Tesellüm sayfasından tesellüm girişi yapın.</TableCell></TableRow>
+                  ) : recentReceipts.filter(r => r.status === 'teslim_alindi' || r.status === 'kontrol_bekliyor').map(r => {
+                    const hasPlan = materialPlans.some(p => p.material_id === r.material_id)
                     return (
-                      <TableRow key={e.id}>
-                        <TableCell className="font-medium">{e.material?.code} - {e.material?.name}</TableCell>
-                        <TableCell className="font-mono text-sm">{e.invoice_number || '-'}</TableCell>
-                        <TableCell className="font-mono text-sm">{e.lot_number || '-'}</TableCell>
-                        <TableCell>{e.supplier?.name || '-'}</TableCell>
-                        <TableCell className="text-right font-bold">{e.quantity} {e.material?.unit}</TableCell>
-                        <TableCell>{new Date(e.entry_date).toLocaleDateString('tr-TR')}</TableCell>
+                      <TableRow key={r.id}>
+                        <TableCell className="font-medium">{r.material?.code} - {r.material?.name}</TableCell>
+                        <TableCell className="font-mono text-sm">{r.invoice_number || '-'}</TableCell>
+                        <TableCell className="font-mono text-sm">{r.lot_number || '-'}</TableCell>
+                        <TableCell>{r.supplier?.name || '-'}</TableCell>
+                        <TableCell className="text-right font-bold">{r.quantity} {r.material?.unit}</TableCell>
+                        <TableCell>{new Date(r.receipt_date).toLocaleDateString('tr-TR')}</TableCell>
                         <TableCell>
                           {hasPlan ? (
                             <Badge className="bg-emerald-100 text-emerald-700" variant="outline">Var</Badge>
@@ -534,7 +768,7 @@ export function GirdiKontrolClient({ materialPlans, recentEntries, inspections, 
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button size="sm" variant={hasPlan ? 'outline' : 'ghost'} onClick={() => startInspection(e)} disabled={!hasPlan} title={!hasPlan ? 'Önce kontrol planı oluşturun' : ''}>
+                          <Button size="sm" variant={hasPlan ? 'outline' : 'ghost'} onClick={() => startInspection(r)} disabled={!hasPlan} title={!hasPlan ? 'Önce kontrol planı oluşturun' : ''}>
                             <ClipboardCheck className="w-3 h-3 mr-1" />{hasPlan ? 'Kontrol Et' : 'Plan Yok'}
                           </Button>
                         </TableCell>

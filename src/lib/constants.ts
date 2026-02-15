@@ -18,16 +18,30 @@ export const STATUS_COLORS: Record<GearboxStatus, string> = {
   revizyon_iade: 'bg-red-100 text-red-700 border-red-200',
 }
 
-export const MODEL_LABELS: Record<GearboxModel, string> = {
+const DEFAULT_MODEL_LABELS: Record<string, string> = {
   A: 'Model A',
   B: 'Model B',
   C: 'Model C',
 }
+export const MODEL_LABELS: Record<string, string> = { ...DEFAULT_MODEL_LABELS }
 
-export const MODEL_COLORS: Record<GearboxModel, string> = {
+export function getModelLabel(code: string, models?: { code: string; name: string }[]): string {
+  if (models) {
+    const m = models.find(x => x.code === code)
+    if (m) return m.name
+  }
+  return DEFAULT_MODEL_LABELS[code] ?? `Model ${code}`
+}
+
+const DEFAULT_MODEL_COLORS: Record<string, string> = {
   A: '#3b82f6',
   B: '#10b981',
   C: '#f59e0b',
+}
+export const MODEL_COLORS: Record<string, string> = DEFAULT_MODEL_COLORS
+
+export function getModelColor(code: string): string {
+  return DEFAULT_MODEL_COLORS[code] ?? '#6b7280'
 }
 
 export const CATEGORY_LABELS: Record<MaterialCategory, string> = {
@@ -56,10 +70,12 @@ export const ALLOWED_TRANSITIONS: Record<GearboxStatus, GearboxStatus[]> = {
 export const NAV_ITEMS = [
   { href: '/', label: 'Anasayfa', icon: 'LayoutDashboard' },
   { href: '/bom', label: 'BOM / Reçete', icon: 'FileText' },
-  { href: '/malzeme', label: 'Malzeme & Stok', icon: 'Package' },
+  { href: '/kontrol-plani', label: 'Kontrol Planları', icon: 'ClipboardList' },
+  { href: '/tesellum', label: 'Tesellüm', icon: 'Receipt' },
   { href: '/girdi-kontrol', label: 'Girdi Kontrol', icon: 'ClipboardList' },
+  { href: '/malzeme', label: 'Malzeme & Stok', icon: 'Package' },
   { href: '/uretim', label: 'Üretim', icon: 'Factory' },
-  { href: '/kalite-kontrol', label: 'Kalite Kontrol', icon: 'ShieldCheck' },
+  { href: '/kalite-kontrol', label: 'Final Kalite Kontrol', icon: 'ShieldCheck' },
   { href: '/bitimis-urun-stok', label: 'Bitmiş Ürün Stok', icon: 'PackageCheck' },
   { href: '/sevkiyat', label: 'Sevkiyat', icon: 'Truck' },
   { href: '/izlenebilirlik', label: 'İzlenebilirlik', icon: 'Search' },

@@ -13,21 +13,39 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { CATEGORY_LABELS } from '@/lib/constants'
-import type { Material, Supplier, MaterialStockEntry, MaterialCategory, MaterialUnit } from '@/lib/types'
-import { Plus, Package, Search, Loader2, Warehouse, AlertTriangle, Pencil, Trash2 } from 'lucide-react'
+import { CATEGORY_LABELS, MODEL_LABELS } from '@/lib/constants'
+import type { Material, Supplier, MaterialStockEntry, MaterialCategory, MaterialUnit, GearboxModel } from '@/lib/types'
+import { Plus, Package, Search, Loader2, Warehouse, AlertTriangle, Pencil, Trash2, Cog, Gauge } from 'lucide-react'
 import { toast } from 'sonner'
+
+interface CapacityByModel {
+  model: GearboxModel
+  maxGearboxes: number
+  bottleneck: string | null
+  bomDefined: boolean
+  items: {
+    materialId: string
+    materialName: string
+    materialCode: string
+    currentStock: number
+    requiredPerUnit: number
+    possibleUnits: number
+    unit: string
+    isCritical: boolean
+  }[]
+}
 
 interface MalzemeClientProps {
   materials: (Material & { default_supplier?: { name: string } | null })[]
   suppliers: Supplier[]
   stockEntries: (MaterialStockEntry & { material?: { code: string; name: string; unit: string } | null; supplier?: { name: string } | null })[]
+  capacityByModel: CapacityByModel[]
 }
 
 const emptyMatForm = { code: '', name: '', description: '', category: 'komponent' as MaterialCategory, unit: 'adet' as MaterialUnit, min_stock: '0', target_stock: '0' }
 const emptyEntryForm = { material_id: '', supplier_id: '', invoice_number: '', lot_number: '', quantity: '', entry_date: new Date().toISOString().split('T')[0], notes: '' }
 
-export function MalzemeClient({ materials: initMaterials, suppliers, stockEntries: initEntries }: MalzemeClientProps) {
+export function MalzemeClient({ materials: initMaterials, suppliers, stockEntries: initEntries, capacityByModel }: MalzemeClientProps) {
   const [materials, setMaterials] = useState(initMaterials)
   const [stockEntries, setStockEntries] = useState(initEntries)
   const [matOpen, setMatOpen] = useState(false)
@@ -110,7 +128,7 @@ export function MalzemeClient({ materials: initMaterials, suppliers, stockEntrie
     }
   }
 
-  // === STOK GİRİŞİ ===
+  // === STOK GİRİŞİ (manuel - girdi kontrolden geçmiş veya özel durumlar) ===
   const handleCreateEntry = async () => {
     setLoading(true)
     try {
@@ -238,7 +256,7 @@ export function MalzemeClient({ materials: initMaterials, suppliers, stockEntrie
 
           <Dialog open={entryOpen} onOpenChange={setEntryOpen}>
             <DialogTrigger asChild>
-              <Button><Plus className="w-4 h-4 mr-2" />Stok Girişi</Button>
+              <Button variant="outline"><Plus className="w-4 h-4 mr-2" />Manuel Stok Girişi</Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader><DialogTitle>Yeni Stok Girişi</DialogTitle></DialogHeader>
@@ -302,6 +320,41 @@ export function MalzemeClient({ materials: initMaterials, suppliers, stockEntrie
         </DialogContent>
       </Dialog>
 
+      {/* Üretim Kapasitesi Kartları */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {capacityByModel.map(cap => {
+          const MODEL_BG: Record<string, string> = { A: 'from-blue-500 to-blue-600', B: 'from-emerald-500 to-emerald-600', C: 'from-amber-500 to-amber-600' }
+          return (
+            <Card key={cap.model} className="relative overflow-hidden">
+              <div className={`absolute inset-0 bg-linear-to-br ${MODEL_BG[cap.model]} opacity-5`} />
+              <CardContent className="pt-5 pb-4 relative">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-lg bg-linear-to-br ${MODEL_BG[cap.model]} flex items-center justify-center`}>
+                      <Cog className="w-3.5 h-3.5 text-white" />
+                    </div>
+                    <span className="font-semibold text-sm">{MODEL_LABELS[cap.model]}</span>
+                  </div>
+                  <Gauge className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <div className="text-center py-2">
+                  <span className="text-3xl font-black">{cap.bomDefined ? cap.maxGearboxes : '-'}</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {cap.bomDefined ? 'adet şanzıman üretilebilir' : 'BOM tanımlı değil'}
+                  </p>
+                </div>
+                {cap.bomDefined && cap.bottleneck && cap.maxGearboxes >= 0 && (
+                  <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded mt-1">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    <span className="truncate">Darboğaz: <strong>{cap.bottleneck}</strong></span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
+
       <Tabs defaultValue="stock">
         <TabsList>
           <TabsTrigger value="stock"><Warehouse className="w-4 h-4 mr-1" />Stok</TabsTrigger>
@@ -317,7 +370,7 @@ export function MalzemeClient({ materials: initMaterials, suppliers, stockEntrie
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input className="pl-10" placeholder="Stokta ara..." value={stockSearch} onChange={e => setStockSearch(e.target.value)} />
                 </div>
-                <Button onClick={() => setEntryOpen(true)}><Plus className="w-4 h-4 mr-2" />Stok Girişi</Button>
+                <Button variant="outline" onClick={() => setEntryOpen(true)}><Plus className="w-4 h-4 mr-2" />Manuel Stok Girişi</Button>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -330,13 +383,14 @@ export function MalzemeClient({ materials: initMaterials, suppliers, stockEntrie
                     <TableHead className="text-right">Mevcut Stok</TableHead>
                     <TableHead>Birim</TableHead>
                     <TableHead className="text-right">Min</TableHead>
+                    <TableHead className="text-right">Max</TableHead>
                     <TableHead>Durum</TableHead>
                     <TableHead>Son İrsaliye</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {stockByMaterial.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Stokta kayıt yok</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">Stokta kayıt yok</TableCell></TableRow>
                   ) : stockByMaterial.map(m => {
                     const lastEntry = stockEntries.find(e => e.material_id === m.id)
                     const isCritical = m.current_stock <= m.min_stock && m.min_stock > 0
@@ -348,6 +402,7 @@ export function MalzemeClient({ materials: initMaterials, suppliers, stockEntrie
                         <TableCell className={`text-right font-bold text-lg ${isCritical ? 'text-red-600' : ''}`}>{m.current_stock}</TableCell>
                         <TableCell>{m.unit}</TableCell>
                         <TableCell className="text-right text-muted-foreground">{m.min_stock}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">{m.target_stock > 0 ? m.target_stock : '-'}</TableCell>
                         <TableCell>
                           {isCritical ? (
                             <Badge variant="destructive" className="text-xs"><AlertTriangle className="w-3 h-3 mr-1" />Kritik</Badge>
