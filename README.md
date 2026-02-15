@@ -1,36 +1,128 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PowerMac - Şanzıman Üretim Yönetim Sistemi
 
-## Getting Started
+Şanzıman üretim takibi, kalite kontrol ve uçtan uca izlenebilirlik sistemi.
 
-First, run the development server:
+## Teknoloji
+
+- **Frontend:** Next.js 16 (App Router) + React + TypeScript
+- **UI:** Tailwind CSS v4 + shadcn/ui
+- **Backend:** Supabase (Postgres + Auth + Storage + RLS)
+- **Grafik:** Recharts
+- **Form:** React Hook Form + Zod
+- **Deploy:** Netlify
+
+## Özellikler
+
+- **Şanzıman Üretim Takibi:** Otomatik seri no üretimi (DDMMYY-MODEL-SIRA), durum yönetimi
+- **Malzeme & Stok Yönetimi:** Parça girişi, irsaliye/lot takibi, tedarikçi yönetimi
+- **BOM / Reçete:** Model bazlı malzeme listesi, revizyon yönetimi
+- **Parça Eşleştirme:** Şanzıman-parça ilişkilendirme, kitting kontrolü
+- **Kontrol Planı:** Model bazlı ölçüm tanımları, revizyon yönetimi
+- **Final Kalite Kontrol:** Ölçüm girişi, otomatik tolerans değerlendirme, OK/RET
+- **Sevkiyat & Montaj:** Sevk bilgileri, araç montaj (plaka/VIN) kayıtları
+- **İzlenebilirlik:** Seri no, VIN, plaka, irsaliye ile kapsamlı arama
+- **NCR:** RET sonuçlarından otomatik uygunsuzluk kaydı
+- **Audit Trail:** Tüm kritik değişikliklerin izlenmesi
+- **Dashboard:** Üretim/sevkiyat/stok grafikleri, kritik stok uyarıları
+
+## Kurulum
+
+### Gereksinimler
+
+- Node.js 20+
+- npm
+- Supabase hesabı
+
+### Yerel Geliştirme
 
 ```bash
+# Bağımlılıkları kur
+npm install
+
+# Ortam değişkenlerini ayarla
+cp .env.example .env.local
+# .env.local dosyasını düzenleyin
+
+# Geliştirme sunucusu
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Ortam Değişkenleri
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Değişken | Açıklama |
+|----------|----------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase proje URL'i |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Demo Kullanıcılar
 
-## Learn More
+| E-posta | Şifre | Rol |
+|---------|-------|-----|
+| admin@powermac.com | PowerMac2024! | Yönetici (Admin) |
+| kalite@powermac.com | PowerMac2024! | Kalite |
+| uretim@powermac.com | PowerMac2024! | Üretim |
+| lojistik@powermac.com | PowerMac2024! | Lojistik |
 
-To learn more about Next.js, take a look at the following resources:
+## Seri Numarası Formatı
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+DDMMYY-MODEL-SIRA
+Örnek: 150226-A-01, 150226-B-03
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **DDMMYY:** Üretim tarihi
+- **MODEL:** A, B veya C
+- **SIRA:** Aynı gün ve model için otomatik artan (01, 02...)
 
-## Deploy on Vercel
+## Netlify Deploy
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+# Build
+npm run build
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# Netlify CLI ile deploy
+netlify deploy --prod
+```
+
+### Netlify Ayarları
+
+- **Build command:** `npm run build`
+- **Publish directory:** `.next`
+- **Node version:** 20
+- **Environment variables:** Yukarıdaki ortam değişkenlerini Netlify dashboard'dan ekleyin
+
+## Veritabanı Şeması
+
+20+ tablo ile ilişkisel tasarım:
+
+- `profiles` - Kullanıcı profilleri ve rolleri
+- `gearboxes` - Şanzıman üretim kayıtları
+- `materials` - Malzeme tanımları
+- `material_stock_entries` - Stok giriş kayıtları
+- `gearbox_part_mappings` - Şanzıman-parça eşleştirmeleri
+- `bom_revisions` / `bom_items` - Ürün reçeteleri
+- `control_plan_revisions` / `control_plan_items` - Kontrol planları
+- `quality_inspections` / `quality_measurements` - Kalite kontrol
+- `shipments` - Sevkiyat kayıtları
+- `vehicle_assemblies` - Araç montaj bilgileri
+- `ncr_records` - Uygunsuzluk kayıtları
+- `audit_logs` - Denetim izi
+- `stock_movements` - Stok hareketleri
+- `attachments` - Dosya ekleri
+- `system_settings` - Sistem ayarları
+
+## Yetkilendirme (RLS)
+
+| Modül | Admin | Kalite | Üretim | Lojistik | İzleyici |
+|-------|-------|--------|--------|----------|----------|
+| Şanzıman CRUD | ✅ | ❌ | ✅ | ❌ | ❌ |
+| Kalite Kontrol | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Kontrol Planı | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Sevkiyat | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Malzeme | ✅ | ❌ | ✅ | ❌ | ❌ |
+| BOM | ✅ | ❌ | ✅ | ❌ | ❌ |
+| Okuma (Tümü) | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+## Lisans
+
+Özel kullanım - PowerMac
