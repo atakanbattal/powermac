@@ -2,7 +2,7 @@ import { GearboxStatus, GearboxModel, MaterialCategory, NcrStatus, UserRole } fr
 
 export const STATUS_LABELS: Record<GearboxStatus, string> = {
   uretimde: 'Üretimde',
-  final_kontrol_bekliyor: 'Final Kontrol Bekliyor',
+  final_kontrol_bekliyor: 'Kontrol Bekliyor',
   stokta: 'Stokta',
   sevk_edildi: 'Sevk Edildi',
   montajlandi: 'Montajlandı',
@@ -66,7 +66,6 @@ export const NAV_ITEMS = [
   { href: '/malzeme', label: 'Malzeme & Stok', icon: 'Package' },
   { href: '/bom', label: 'BOM / Reçete', icon: 'FileText' },
   { href: '/kalite-kontrol', label: 'Kalite Kontrol', icon: 'ShieldCheck' },
-  { href: '/kontrol-plani', label: 'Kontrol Planı', icon: 'ClipboardList' },
   { href: '/sevkiyat', label: 'Sevkiyat', icon: 'Truck' },
   { href: '/izlenebilirlik', label: 'İzlenebilirlik', icon: 'Search' },
   { href: '/ncr', label: 'Uygunsuzluk (NCR)', icon: 'AlertTriangle' },

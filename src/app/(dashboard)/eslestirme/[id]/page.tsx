@@ -8,7 +8,7 @@ export default async function EslestirmePage({ params }: { params: Promise<{ id:
 
   const { data: gearbox } = await supabase
     .from('gearboxes')
-    .select('*, bom_revision:bom_revisions(id, model, revision_no, bom_items(*, material:materials(id, code, name, unit, current_stock)))')
+    .select('*, bom_revision:bom_revisions(id, model, revision_no, bom_items(*, material:materials!material_id(id, code, name, unit, current_stock)))')
     .eq('id', id)
     .single()
 

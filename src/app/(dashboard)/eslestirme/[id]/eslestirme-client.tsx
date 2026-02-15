@@ -65,7 +65,7 @@ export function EslestirmeClient({ gearbox, existingMappings: initMappings, stoc
         stock_entry_id: newMapping.stock_entry_id,
         quantity: qty,
         mapped_by: user?.id,
-      }).select('*, material:materials(code, name, unit), stock_entry:material_stock_entries(id, invoice_number, lot_number, remaining_quantity, supplier:suppliers(name))').single()
+      }).select('*, material:materials!material_id(code, name, unit), stock_entry:material_stock_entries(id, invoice_number, lot_number, remaining_quantity, supplier:suppliers(name))').single()
       if (error) throw error
 
       // Stok düş

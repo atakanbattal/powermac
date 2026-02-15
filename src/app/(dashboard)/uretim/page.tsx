@@ -4,11 +4,19 @@ import { UretimClient } from './uretim-client'
 export default async function UretimPage() {
   const supabase = await createClient()
 
-  const { data: gearboxes } = await supabase
-    .from('gearboxes')
-    .select('*, responsible_user:profiles(full_name)')
-    .order('created_at', { ascending: false })
-    .limit(100)
+  const [{ data: gearboxes }, { data: profiles }] = await Promise.all([
+    supabase
+      .from('gearboxes')
+      .select('*, responsible_user:profiles(full_name)')
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('profiles')
+      .select('id, full_name, role')
+      .in('role', ['admin', 'production'])
+      .eq('is_active', true)
+      .order('full_name'),
+  ])
 
-  return <UretimClient gearboxes={gearboxes || []} />
+  return <UretimClient gearboxes={gearboxes || []} profiles={profiles || []} />
 }

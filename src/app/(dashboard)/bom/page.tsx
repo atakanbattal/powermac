@@ -6,7 +6,7 @@ export default async function BomPage() {
 
   const { data: bomRevisions } = await supabase
     .from('bom_revisions')
-    .select('*, bom_items(*, material:materials(code, name, unit))')
+    .select('*, bom_items(*, material:materials!material_id(code, name, unit))')
     .order('model')
     .order('revision_no', { ascending: false })
 

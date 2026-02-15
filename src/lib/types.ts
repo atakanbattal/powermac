@@ -32,6 +32,8 @@ export interface Gearbox {
   production_end?: string
   responsible_user_id?: string
   bom_revision_id?: string
+  work_order?: string
+  production_line?: string
   parts_mapping_complete: boolean
   notes?: string
   created_at: string
@@ -152,6 +154,9 @@ export interface ControlPlanRevision {
   effective_date: string
   created_by?: string
   created_at: string
+  target_type?: string
+  target_name?: string
+  material_id?: string
   control_plan_items?: ControlPlanItem[]
 }
 

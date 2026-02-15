@@ -88,7 +88,7 @@ export function GearboxDetailClient({ gearbox, partMappings, inspections, shipme
       </div>
 
       {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1"><Calendar className="w-3.5 h-3.5" />Üretim Tarihi</div>
@@ -100,6 +100,12 @@ export function GearboxDetailClient({ gearbox, partMappings, inspections, shipme
           <CardContent className="pt-4">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1"><User className="w-3.5 h-3.5" />Sorumlu</div>
             <p className="font-bold">{gearbox.responsible_user?.full_name || '-'}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">İş Emri</div>
+            <p className="font-bold">{gearbox.work_order || '-'}</p>
           </CardContent>
         </Card>
         <Card>
