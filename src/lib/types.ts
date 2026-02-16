@@ -4,7 +4,7 @@
 
 export type UserRole = 'admin' | 'quality' | 'production' | 'logistics' | 'viewer'
 export type GearboxModel = string // Dinamik: A, B, C veya gearbox_models'den gelen kodlar
-export type GearboxStatus = 'uretimde' | 'final_kontrol_bekliyor' | 'stokta' | 'sevk_edildi' | 'montajlandi' | 'revizyon_iade'
+export type GearboxStatus = 'uretimde' | 'final_kontrol_bekliyor' | 'stokta' | 'sevk_edildi' | 'montajlandi' | 'revizyon_iade' | 'hurdaya'
 export type MaterialCategory = 'hammadde' | 'komponent' | 'sarf'
 export type MaterialUnit = 'adet' | 'kg' | 'lt' | 'm' | 'mm' | 'set'
 export type StockMovementType = 'giris' | 'tuketim' | 'duzeltme' | 'fire' | 'iade'

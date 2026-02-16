@@ -7,6 +7,7 @@ export const STATUS_LABELS: Record<GearboxStatus, string> = {
   sevk_edildi: 'Sevk Edildi',
   montajlandi: 'Montajlandı',
   revizyon_iade: 'Revizyon/İade',
+  hurdaya: 'Hurdaya',
 }
 
 export const STATUS_COLORS: Record<GearboxStatus, string> = {
@@ -16,6 +17,7 @@ export const STATUS_COLORS: Record<GearboxStatus, string> = {
   sevk_edildi: 'bg-indigo-100 text-indigo-700 border-indigo-200',
   montajlandi: 'bg-purple-100 text-purple-700 border-purple-200',
   revizyon_iade: 'bg-red-100 text-red-700 border-red-200',
+  hurdaya: 'bg-slate-100 text-slate-500 border-slate-200',
 }
 
 const DEFAULT_MODEL_LABELS: Record<string, string> = {
@@ -65,6 +67,7 @@ export const ALLOWED_TRANSITIONS: Record<GearboxStatus, GearboxStatus[]> = {
   sevk_edildi: ['montajlandi'],
   revizyon_iade: ['final_kontrol_bekliyor', 'uretimde'],
   montajlandi: [],
+  hurdaya: [],
 }
 
 export const NAV_ITEMS = [

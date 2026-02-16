@@ -26,12 +26,19 @@ interface MeasurementEntry {
   result: InspectionResult
 }
 
-function evaluateMeasurement(value: number | null, item: ControlPlanItem): InspectionResult {
-  if (value === null || isNaN(value)) return 'beklemede'
+function evaluateMeasurement(value: string | null, item: ControlPlanItem): InspectionResult {
+  if (value === null || value === '') return 'beklemede'
+
+  if (item.sample_info) {
+    return value.trim().toLowerCase() === item.sample_info.trim().toLowerCase() ? 'ok' : 'ret'
+  }
+
+  const numVal = parseFloat(value)
+  if (isNaN(numVal)) return 'beklemede'
   const lower = item.lower_limit
   const upper = item.upper_limit
-  if (lower !== null && lower !== undefined && value < lower) return 'ret'
-  if (upper !== null && upper !== undefined && value > upper) return 'ret'
+  if (lower !== null && lower !== undefined && numVal < lower) return 'ret'
+  if (upper !== null && upper !== undefined && numVal > upper) return 'ret'
   return 'ok'
 }
 
@@ -54,8 +61,7 @@ export function YeniKontrolClient({ gearbox, controlPlan }: Props) {
   const handleValueChange = useCallback((itemId: string, value: string) => {
     const item = items.find(i => i.id === itemId)
     if (!item) return
-    const numVal = value ? parseFloat(value) : null
-    const result = evaluateMeasurement(numVal, item)
+    const result = evaluateMeasurement(value, item)
     setMeasurements(prev => ({
       ...prev,
       [itemId]: { ...prev[itemId], measured_value: value, result },
@@ -97,12 +103,17 @@ export function YeniKontrolClient({ gearbox, controlPlan }: Props) {
       if (error) throw error
 
       // 2. Ölçüm değerlerini kaydet
-      const measurementRows = Object.values(measurements).map(m => ({
-        inspection_id: inspection.id,
-        control_plan_item_id: m.control_plan_item_id,
-        measured_value: m.measured_value ? parseFloat(m.measured_value) : null,
-        result: m.result,
-      }))
+      const measurementRows = Object.values(measurements).map(m => {
+        const planItem = items.find(i => i.id === m.control_plan_item_id)
+        const isTextItem = !!planItem?.sample_info
+        return {
+          inspection_id: inspection.id,
+          control_plan_item_id: m.control_plan_item_id,
+          measured_value: isTextItem ? null : (m.measured_value ? parseFloat(m.measured_value) : null),
+          notes: isTextItem ? (m.measured_value || null) : null,
+          result: m.result,
+        }
+      })
       const { error: mError } = await supabase.from('quality_measurements').insert(measurementRows)
       if (mError) throw mError
 
@@ -194,18 +205,23 @@ export function YeniKontrolClient({ gearbox, controlPlan }: Props) {
                           {m?.result === 'ret' && <div className="text-xs text-red-600 font-medium mt-0.5">Tolerans dışı!</div>}
                         </TableCell>
                         <TableCell className="font-mono text-sm">
-                          {item.nominal_value !== null ? `${item.nominal_value} ` : ''}
-                          {item.lower_limit !== null && item.upper_limit !== null
-                            ? `(${item.lower_limit} - ${item.upper_limit})`
-                            : item.upper_limit !== null ? `Max ${item.upper_limit}` : ''}
-                          {' '}{item.unit}
+                          {item.sample_info
+                            ? <><span className="font-semibold">{item.sample_info}</span> <span className="text-xs text-muted-foreground">(yazı eşleşmesi)</span></>
+                            : <>
+                                {item.nominal_value !== null ? `${item.nominal_value} ` : ''}
+                                {item.lower_limit !== null && item.upper_limit !== null
+                                  ? `(${item.lower_limit} - ${item.upper_limit})`
+                                  : item.upper_limit !== null ? `Max ${item.upper_limit}` : ''}
+                                {' '}{item.unit}
+                              </>
+                          }
                         </TableCell>
                         <TableCell>
                           <Input
-                            type="number"
-                            step="0.001"
-                            className={`font-mono text-right ${m?.result === 'ret' ? 'border-red-300 text-red-600 font-bold' : ''}`}
-                            placeholder="---"
+                            type={item.sample_info ? 'text' : 'number'}
+                            step={item.sample_info ? undefined : '0.001'}
+                            className={`font-mono ${item.sample_info ? 'text-left' : 'text-right'} ${m?.result === 'ret' ? 'border-red-300 text-red-600 font-bold' : ''}`}
+                            placeholder={item.sample_info || '---'}
                             value={m?.measured_value || ''}
                             onChange={e => handleValueChange(item.id, e.target.value)}
                           />

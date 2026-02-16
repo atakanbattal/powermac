@@ -124,17 +124,28 @@ export function BitimisUrunStokClient({ stockGearboxes: initGearboxes, revizyonG
     } finally { setLoading(false) }
   }
 
-  // === SİL ===
+  // === SİL (soft-delete: hurdaya) ===
   const handleDelete = async (g: StockGearbox) => {
-    if (!confirm(`"${g.serial_number}" seri nolu ürünü kalıcı olarak silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`)) return
+    if (!confirm(`"${g.serial_number}" seri nolu ürünü hurdaya ayırmak istediğinize emin misiniz?\n\nÜrün stoktan çıkarılacak ve listede görünmeyecektir.`)) return
     setLoading(true)
     try {
-      const { error } = await supabase.from('gearboxes').delete().eq('id', g.id)
+      const { data: { user } } = await supabase.auth.getUser()
+      await supabase.from('audit_logs').insert({
+        entity_type: 'gearboxes',
+        entity_id: g.id,
+        action: 'HURDAYA',
+        old_values: { serial_number: g.serial_number, model: g.model, status: g.status },
+        new_values: { reason: 'Kalıcı sil ile hurdaya ayrıldı' },
+        user_id: user?.id,
+        user_name: user?.email,
+      })
+      const { error } = await supabase.from('gearboxes').update({ status: 'hurdaya' }).eq('id', g.id)
       if (error) throw error
       setGearboxes(gearboxes.filter(gb => gb.id !== g.id))
-      toast.success(`${g.serial_number} silindi`)
+      toast.success(`${g.serial_number} hurdaya ayrıldı`)
+      router.refresh()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Silme hatası - ilişkili kayıtlar olabilir')
+      toast.error(err instanceof Error ? err.message : 'İşlem hatası')
     } finally { setLoading(false) }
   }
 
@@ -153,19 +164,19 @@ export function BitimisUrunStokClient({ stockGearboxes: initGearboxes, revizyonG
       const { data: { user } } = await supabase.auth.getUser()
 
       if (actionType === 'scrap') {
-        // Hurdaya ayır: sil + audit log
+        // Hurdaya ayır: soft-delete (status=hurdaya) + audit log
         const prevStatus = actionGearbox.status || 'stokta'
-        const { error: auditErr } = await supabase.from('audit_logs').insert({
+        await supabase.from('audit_logs').insert({
           entity_type: 'gearboxes',
           entity_id: actionGearbox.id,
-          action: 'DELETE',
+          action: 'HURDAYA',
           old_values: { serial_number: actionGearbox.serial_number, model: actionGearbox.model, status: prevStatus },
           new_values: { reason: 'Hurdaya ayrıldı', notes: actionNotes },
           user_id: user?.id,
           user_name: user?.email,
         })
 
-        const { error } = await supabase.from('gearboxes').delete().eq('id', actionGearbox.id)
+        const { error } = await supabase.from('gearboxes').update({ status: 'hurdaya' }).eq('id', actionGearbox.id)
         if (error) throw error
         setGearboxes(gearboxes.filter(g => g.id !== actionGearbox.id))
         setRevizyonGearboxes(revizyonGearboxes.filter(g => g.id !== actionGearbox.id))

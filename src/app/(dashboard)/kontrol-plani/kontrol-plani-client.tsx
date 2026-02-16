@@ -102,7 +102,7 @@ export function KontrolPlaniClient({ controlPlans: initPlans, materials, gearbox
       _key: item.id,
       name: item.name,
       characteristic: item.characteristic || '',
-      nominal_value: item.nominal_value != null ? String(item.nominal_value) : '',
+      nominal_value: item.sample_info || (item.nominal_value != null ? String(item.nominal_value) : ''),
       lower_limit: item.lower_limit != null ? String(item.lower_limit) : '',
       upper_limit: item.upper_limit != null ? String(item.upper_limit) : '',
       unit: item.unit || 'mm',
@@ -169,19 +169,24 @@ export function KontrolPlaniClient({ controlPlans: initPlans, materials, gearbox
       }).select().single()
       if (planErr) throw new Error(planErr.message || 'Plan oluşturma hatası')
 
-      const itemsToInsert = validItems.map((item, idx) => ({
-        control_plan_id: plan.id,
-        name: item.name,
-        characteristic: item.characteristic || null,
-        nominal_value: item.nominal_value ? parseFloat(item.nominal_value) : null,
-        lower_limit: item.lower_limit ? parseFloat(item.lower_limit) : null,
-        upper_limit: item.upper_limit ? parseFloat(item.upper_limit) : null,
-        unit: item.unit || 'mm',
-        measurement_method: item.measurement_method || null,
-        equipment: item.equipment || null,
-        is_critical: item.is_critical,
-        sort_order: idx + 1,
-      }))
+      const itemsToInsert = validItems.map((item, idx) => {
+        const nomVal = item.nominal_value.trim()
+        const isNumeric = nomVal !== '' && !isNaN(Number(nomVal))
+        return {
+          control_plan_id: plan.id,
+          name: item.name,
+          characteristic: item.characteristic || null,
+          nominal_value: isNumeric ? parseFloat(nomVal) : null,
+          sample_info: (!isNumeric && nomVal) ? nomVal : null,
+          lower_limit: item.lower_limit ? parseFloat(item.lower_limit) : null,
+          upper_limit: item.upper_limit ? parseFloat(item.upper_limit) : null,
+          unit: item.unit || 'mm',
+          measurement_method: item.measurement_method || null,
+          equipment: item.equipment || null,
+          is_critical: item.is_critical,
+          sort_order: idx + 1,
+        }
+      })
 
       const { data: insertedItems, error: itemsErr } = await supabase
         .from('control_plan_items').insert(itemsToInsert).select()
@@ -212,19 +217,24 @@ export function KontrolPlaniClient({ controlPlans: initPlans, materials, gearbox
       await supabase.from('control_plan_revisions').update({ description: planDesc }).eq('id', editingPlanId)
       await supabase.from('control_plan_items').delete().eq('control_plan_id', editingPlanId)
 
-      const itemsToInsert = validItems.map((item, idx) => ({
-        control_plan_id: editingPlanId,
-        name: item.name,
-        characteristic: item.characteristic || null,
-        nominal_value: item.nominal_value ? parseFloat(item.nominal_value) : null,
-        lower_limit: item.lower_limit ? parseFloat(item.lower_limit) : null,
-        upper_limit: item.upper_limit ? parseFloat(item.upper_limit) : null,
-        unit: item.unit || 'mm',
-        measurement_method: item.measurement_method || null,
-        equipment: item.equipment || null,
-        is_critical: item.is_critical,
-        sort_order: idx + 1,
-      }))
+      const itemsToInsert = validItems.map((item, idx) => {
+        const nomVal = item.nominal_value.trim()
+        const isNumeric = nomVal !== '' && !isNaN(Number(nomVal))
+        return {
+          control_plan_id: editingPlanId,
+          name: item.name,
+          characteristic: item.characteristic || null,
+          nominal_value: isNumeric ? parseFloat(nomVal) : null,
+          sample_info: (!isNumeric && nomVal) ? nomVal : null,
+          lower_limit: item.lower_limit ? parseFloat(item.lower_limit) : null,
+          upper_limit: item.upper_limit ? parseFloat(item.upper_limit) : null,
+          unit: item.unit || 'mm',
+          measurement_method: item.measurement_method || null,
+          equipment: item.equipment || null,
+          is_critical: item.is_critical,
+          sort_order: idx + 1,
+        }
+      })
 
       const { data: insertedItems, error: itemsErr } = await supabase
         .from('control_plan_items').insert(itemsToInsert).select()
@@ -242,10 +252,18 @@ export function KontrolPlaniClient({ controlPlans: initPlans, materials, gearbox
 
   const handleDeletePlan = async (planId: string, name: string) => {
     if (!confirm(`"${name}" kontrol planını silmek istediğinize emin misiniz?`)) return
-    await supabase.from('control_plan_revisions').delete().eq('id', planId)
-    setPlans(plans.filter(p => p.id !== planId))
-    toast.success('Plan silindi')
-    router.refresh()
+    try {
+      const { error } = await supabase
+        .from('control_plan_revisions')
+        .update({ is_active: false })
+        .eq('id', planId)
+      if (error) throw new Error(error.message)
+      setPlans(plans.filter(p => p.id !== planId))
+      toast.success('Plan silindi')
+      router.refresh()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Plan silinemedi')
+    }
   }
 
   const getPlanLabel = (plan: (typeof plans)[0]) => {
@@ -330,7 +348,7 @@ export function KontrolPlaniClient({ controlPlans: initPlans, materials, gearbox
                           <TableCell>{item.is_critical && <Star className="w-4 h-4 text-amber-500 fill-amber-500" />}</TableCell>
                           <TableCell className="font-medium">{item.name}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{item.characteristic || '-'}</TableCell>
-                          <TableCell className="font-mono text-sm">{item.nominal_value ?? '-'}</TableCell>
+                          <TableCell className="font-mono text-sm">{item.sample_info || (item.nominal_value ?? '-')}</TableCell>
                           <TableCell className="font-mono text-sm">{item.lower_limit ?? '-'}</TableCell>
                           <TableCell className="font-mono text-sm">{item.upper_limit ?? '-'}</TableCell>
                           <TableCell>{item.unit}</TableCell>
@@ -435,7 +453,7 @@ export function KontrolPlaniClient({ controlPlans: initPlans, materials, gearbox
                         </Select>
                       </TableCell>
                       <TableCell>
-                        <Input className="h-9 text-sm font-mono" type="number" step="0.001" value={item.nominal_value} onChange={e => updateDraftRow(item._key, 'nominal_value', e.target.value)} placeholder="25.00" />
+                        <Input className="h-9 text-sm font-mono" type="text" value={item.nominal_value} onChange={e => updateDraftRow(item._key, 'nominal_value', e.target.value)} placeholder="Ör: 25.00 veya M10" />
                       </TableCell>
                       <TableCell>
                         <Input className="h-9 text-sm font-mono" type="number" step="0.001" value={item.lower_limit} onChange={e => updateDraftRow(item._key, 'lower_limit', e.target.value)} placeholder="Min" />

@@ -68,9 +68,10 @@ interface InspectionRecord {
   material_measurements?: {
     id: string
     measured_value?: number
+    notes?: string
     result: string
     control_plan_item?: {
-      name: string; nominal_value?: number; lower_limit?: number; upper_limit?: number; unit: string; is_critical: boolean
+      name: string; nominal_value?: number; lower_limit?: number; upper_limit?: number; unit: string; is_critical: boolean; sample_info?: string
     } | null
   }[]
 }
@@ -118,10 +119,19 @@ const RESULT_BADGE: Record<string, string> = {
   beklemede: 'bg-amber-100 text-amber-700 border-amber-200',
 }
 
-function evaluateMeasurement(value: number | null, item: ControlPlanItem): InspectionResult {
-  if (value === null || isNaN(value)) return 'beklemede'
-  if (item.lower_limit !== null && item.lower_limit !== undefined && value < item.lower_limit) return 'ret'
-  if (item.upper_limit !== null && item.upper_limit !== undefined && value > item.upper_limit) return 'ret'
+function evaluateMeasurement(value: string | null, item: ControlPlanItem): InspectionResult {
+  if (value === null || value === '') return 'beklemede'
+
+  // Text-based nominal check (e.g., "M10")
+  if (item.sample_info) {
+    return value.trim().toLowerCase() === item.sample_info.trim().toLowerCase() ? 'ok' : 'ret'
+  }
+
+  // Numeric check with limits
+  const numVal = parseFloat(value)
+  if (isNaN(numVal)) return 'beklemede'
+  if (item.lower_limit !== null && item.lower_limit !== undefined && numVal < item.lower_limit) return 'ret'
+  if (item.upper_limit !== null && item.upper_limit !== undefined && numVal > item.upper_limit) return 'ret'
   return 'ok'
 }
 
@@ -197,8 +207,7 @@ export function GirdiKontrolClient({ materialPlans, recentReceipts, recentEntrie
   const handleValueChange = useCallback((itemId: string, value: string) => {
     const item = inspPlan?.control_plan_items.find(i => i.id === itemId)
     if (!item) return
-    const numVal = value ? parseFloat(value) : null
-    const result = evaluateMeasurement(numVal, item)
+    const result = evaluateMeasurement(value, item)
     setMeasurements(prev => ({
       ...prev,
       [itemId]: { ...prev[itemId], measured_value: value, result },
@@ -244,12 +253,17 @@ export function GirdiKontrolClient({ materialPlans, recentReceipts, recentEntrie
       }).select().single()
       if (error) throw error
 
-      const measurementRows = Object.values(measurements).map(m => ({
-        inspection_id: inspection.id,
-        control_plan_item_id: m.control_plan_item_id,
-        measured_value: m.measured_value ? parseFloat(m.measured_value) : null,
-        result: m.result,
-      }))
+      const measurementRows = Object.values(measurements).map(m => {
+        const item = inspPlan?.control_plan_items.find(i => i.id === m.control_plan_item_id)
+        const isTextItem = !!item?.sample_info
+        return {
+          inspection_id: inspection.id,
+          control_plan_item_id: m.control_plan_item_id,
+          measured_value: isTextItem ? null : (m.measured_value ? parseFloat(m.measured_value) : null),
+          notes: isTextItem ? (m.measured_value || null) : null,
+          result: m.result,
+        }
+      })
       const { error: mError } = await supabase.from('material_measurements').insert(measurementRows)
       if (mError) throw mError
 
@@ -419,17 +433,23 @@ export function GirdiKontrolClient({ materialPlans, recentReceipts, recentEntrie
                             {m?.result === 'ret' && <div className="text-xs text-red-600 font-medium mt-0.5">Tolerans dışı!</div>}
                           </TableCell>
                           <TableCell className="font-mono text-sm">
-                            {item.nominal_value !== null ? `${item.nominal_value} ` : ''}
-                            {item.lower_limit !== null && item.upper_limit !== null
-                              ? `(${item.lower_limit} - ${item.upper_limit})`
-                              : item.upper_limit !== null ? `Max ${item.upper_limit}` : ''}
-                            {' '}{item.unit}
+                            {item.sample_info
+                              ? <><span className="font-semibold">{item.sample_info}</span> <span className="text-xs text-muted-foreground">(yazı eşleşmesi)</span></>
+                              : <>
+                                  {item.nominal_value !== null ? `${item.nominal_value} ` : ''}
+                                  {item.lower_limit !== null && item.upper_limit !== null
+                                    ? `(${item.lower_limit} - ${item.upper_limit})`
+                                    : item.upper_limit !== null ? `Max ${item.upper_limit}` : ''}
+                                  {' '}{item.unit}
+                                </>
+                            }
                           </TableCell>
                           <TableCell>
                             <Input
-                              type="number" step="0.001"
-                              className={`font-mono text-right ${m?.result === 'ret' ? 'border-red-300 text-red-600 font-bold' : ''}`}
-                              placeholder="---"
+                              type={item.sample_info ? 'text' : 'number'}
+                              step={item.sample_info ? undefined : '0.001'}
+                              className={`font-mono ${item.sample_info ? 'text-left' : 'text-right'} ${m?.result === 'ret' ? 'border-red-300 text-red-600 font-bold' : ''}`}
+                              placeholder={item.sample_info || '---'}
                               value={m?.measured_value || ''}
                               onChange={e => handleValueChange(item.id, e.target.value)}
                             />
@@ -532,12 +552,17 @@ export function GirdiKontrolClient({ materialPlans, recentReceipts, recentEntrie
                     <TableCell>{qm.control_plan_item?.is_critical && <Star className="w-4 h-4 text-amber-500 fill-amber-500" />}</TableCell>
                     <TableCell className="font-medium">{qm.control_plan_item?.name}</TableCell>
                     <TableCell className="font-mono text-sm">
-                      {qm.control_plan_item?.nominal_value !== null ? `${qm.control_plan_item?.nominal_value} ` : ''}
-                      {qm.control_plan_item?.lower_limit !== null && qm.control_plan_item?.upper_limit !== null
-                        ? `(${qm.control_plan_item?.lower_limit} - ${qm.control_plan_item?.upper_limit})`
-                        : ''} {qm.control_plan_item?.unit}
+                      {qm.control_plan_item?.sample_info
+                        ? <span className="font-semibold">{qm.control_plan_item.sample_info}</span>
+                        : <>
+                            {qm.control_plan_item?.nominal_value !== null ? `${qm.control_plan_item?.nominal_value} ` : ''}
+                            {qm.control_plan_item?.lower_limit !== null && qm.control_plan_item?.upper_limit !== null
+                              ? `(${qm.control_plan_item?.lower_limit} - ${qm.control_plan_item?.upper_limit})`
+                              : ''} {qm.control_plan_item?.unit}
+                          </>
+                      }
                     </TableCell>
-                    <TableCell className={`text-right font-mono font-bold ${qm.result === 'ret' ? 'text-red-600' : ''}`}>{qm.measured_value ?? '-'}</TableCell>
+                    <TableCell className={`text-right font-mono font-bold ${qm.result === 'ret' ? 'text-red-600' : ''}`}>{qm.notes || (qm.measured_value ?? '-')}</TableCell>
                     <TableCell className="text-center">{RESULT_ICON[qm.result]}</TableCell>
                   </TableRow>
                 ))}

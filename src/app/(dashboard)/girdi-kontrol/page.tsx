@@ -58,7 +58,7 @@ export default async function GirdiKontrolPage({
         material:materials(code, name, unit),
         inspector:profiles(full_name),
         control_plan:control_plan_revisions(target_name),
-        material_measurements(id, measured_value, result, control_plan_item:control_plan_items(name, nominal_value, lower_limit, upper_limit, unit, is_critical))
+        material_measurements(id, measured_value, notes, result, control_plan_item:control_plan_items(name, nominal_value, lower_limit, upper_limit, unit, is_critical, sample_info))
       `)
       .gte('inspection_date', start)
       .lte('inspection_date', end)
