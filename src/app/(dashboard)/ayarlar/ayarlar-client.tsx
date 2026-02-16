@@ -34,7 +34,10 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
 export function AyarlarClient({ settings, profiles: initProfiles, suppliers: initSuppliers }: Props) {
   // Suppliers
   const [supplierOpen, setSupplierOpen] = useState(false)
-  const [supplierForm, setSupplierForm] = useState({ name: '', code: '', phone: '', email: '' })
+  const [editSupplierOpen, setEditSupplierOpen] = useState(false)
+  const [supplierForm, setSupplierForm] = useState({ name: '', code: '', contact_person: '', phone: '', email: '', address: '', notes: '' })
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
+  const [editSupplierForm, setEditSupplierForm] = useState({ name: '', code: '', contact_person: '', phone: '', email: '', address: '', notes: '' })
   const [suppliers, setSuppliers] = useState(initSuppliers)
 
   // Users
@@ -182,16 +185,111 @@ export function AyarlarClient({ settings, profiles: initProfiles, suppliers: ini
 
   // === TEDARİKÇİ ===
   const handleAddSupplier = async () => {
+    if (!supplierForm.name.trim()) {
+      toast.error('Firma adı zorunlu')
+      return
+    }
     setLoading(true)
     try {
-      const { data, error } = await supabase.from('suppliers').insert(supplierForm).select().single()
+      const { data, error } = await supabase.from('suppliers').insert({
+        name: supplierForm.name.trim(),
+        code: supplierForm.code.trim() || null,
+        contact_person: supplierForm.contact_person.trim() || null,
+        phone: supplierForm.phone.trim() || null,
+        email: supplierForm.email.trim() || null,
+        address: supplierForm.address.trim() || null,
+        notes: supplierForm.notes.trim() || null,
+      }).select().single()
       if (error) throw error
       setSuppliers([...suppliers, data])
       setSupplierOpen(false)
-      setSupplierForm({ name: '', code: '', phone: '', email: '' })
+      setSupplierForm({ name: '', code: '', contact_person: '', phone: '', email: '', address: '', notes: '' })
       toast.success('Tedarikçi eklendi')
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Hata')
+    } finally { setLoading(false) }
+  }
+
+  const openEditSupplier = (s: Supplier) => {
+    setSelectedSupplier(s)
+    setEditSupplierForm({
+      name: s.name,
+      code: s.code || '',
+      contact_person: s.contact_person || '',
+      phone: s.phone || '',
+      email: s.email || '',
+      address: s.address || '',
+      notes: s.notes || '',
+    })
+    setEditSupplierOpen(true)
+  }
+
+  const handleUpdateSupplier = async () => {
+    if (!selectedSupplier) return
+    if (!editSupplierForm.name.trim()) {
+      toast.error('Firma adı zorunlu')
+      return
+    }
+    setLoading(true)
+    try {
+      const { error } = await supabase.from('suppliers').update({
+        name: editSupplierForm.name.trim(),
+        code: editSupplierForm.code.trim() || null,
+        contact_person: editSupplierForm.contact_person.trim() || null,
+        phone: editSupplierForm.phone.trim() || null,
+        email: editSupplierForm.email.trim() || null,
+        address: editSupplierForm.address.trim() || null,
+        notes: editSupplierForm.notes.trim() || null,
+      }).eq('id', selectedSupplier.id)
+      if (error) throw error
+      setSuppliers(suppliers.map(s => s.id === selectedSupplier.id
+        ? { ...s, ...editSupplierForm, code: editSupplierForm.code || undefined, contact_person: editSupplierForm.contact_person || undefined, phone: editSupplierForm.phone || undefined, email: editSupplierForm.email || undefined, address: editSupplierForm.address || undefined, notes: editSupplierForm.notes || undefined }
+        : s))
+      setEditSupplierOpen(false)
+      setSelectedSupplier(null)
+      toast.success('Tedarikçi güncellendi')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Hata')
+    } finally { setLoading(false) }
+  }
+
+  const handleDeleteSupplier = async (s: Supplier) => {
+    if (!confirm(`"${s.name}" tedarikçisini pasif etmek istediğinize emin misiniz?\n\nPasif tedarikçiler yeni işlemlerde seçilemez.`)) return
+    setLoading(true)
+    try {
+      const { error } = await supabase.from('suppliers').update({ is_active: false }).eq('id', s.id)
+      if (error) throw error
+      setSuppliers(suppliers.map(sup => sup.id === s.id ? { ...sup, is_active: false } : sup))
+      toast.success('Tedarikçi pasif edildi')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Hata')
+    } finally { setLoading(false) }
+  }
+
+  const handleActivateSupplier = async (s: Supplier) => {
+    const { error } = await supabase.from('suppliers').update({ is_active: true }).eq('id', s.id)
+    if (error) {
+      toast.error('Hata: ' + error.message)
+      return
+    }
+    setSuppliers(suppliers.map(sup => sup.id === s.id ? { ...sup, is_active: true } : sup))
+    toast.success('Tedarikçi aktif edildi')
+  }
+
+  const handlePermanentDeleteSupplier = async (s: Supplier) => {
+    if (!confirm(`"${s.name}" tedarikçisini KALICI OLARAK silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz. Malzeme ve stok kayıtlarındaki tedarikçi bilgisi silinecektir.`)) return
+    setLoading(true)
+    try {
+      // Önce referansları null yap (FK constraint için)
+      await supabase.from('materials').update({ default_supplier_id: null }).eq('default_supplier_id', s.id)
+      await supabase.from('material_stock_entries').update({ supplier_id: null }).eq('supplier_id', s.id)
+      await supabase.from('material_receipts').update({ supplier_id: null }).eq('supplier_id', s.id)
+      const { error } = await supabase.from('suppliers').delete().eq('id', s.id)
+      if (error) throw error
+      setSuppliers(suppliers.filter(sup => sup.id !== s.id))
+      toast.success('Tedarikçi kalıcı olarak silindi')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Silme hatası - ilişkili kayıtlar olabilir')
     } finally { setLoading(false) }
   }
 
@@ -317,13 +415,18 @@ export function AyarlarClient({ settings, profiles: initProfiles, suppliers: ini
                 <DialogContent>
                   <DialogHeader><DialogTitle>Yeni Tedarikçi</DialogTitle></DialogHeader>
                   <div className="space-y-4 pt-2">
-                    <div className="space-y-2"><Label>Firma Adı</Label><Input value={supplierForm.name} onChange={e => setSupplierForm({ ...supplierForm, name: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Firma Adı *</Label><Input value={supplierForm.name} onChange={e => setSupplierForm({ ...supplierForm, name: e.target.value })} placeholder="Firma adı" /></div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label>Kod</Label><Input value={supplierForm.code} onChange={e => setSupplierForm({ ...supplierForm, code: e.target.value })} /></div>
-                      <div className="space-y-2"><Label>Telefon</Label><Input value={supplierForm.phone} onChange={e => setSupplierForm({ ...supplierForm, phone: e.target.value })} /></div>
+                      <div className="space-y-2"><Label>Kod</Label><Input value={supplierForm.code} onChange={e => setSupplierForm({ ...supplierForm, code: e.target.value })} placeholder="TED-001" /></div>
+                      <div className="space-y-2"><Label>Yetkili Kişi</Label><Input value={supplierForm.contact_person} onChange={e => setSupplierForm({ ...supplierForm, contact_person: e.target.value })} placeholder="Ad Soyad" /></div>
                     </div>
-                    <div className="space-y-2"><Label>E-posta</Label><Input value={supplierForm.email} onChange={e => setSupplierForm({ ...supplierForm, email: e.target.value })} /></div>
-                    <Button onClick={handleAddSupplier} disabled={loading || !supplierForm.name} className="w-full">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label>Telefon</Label><Input value={supplierForm.phone} onChange={e => setSupplierForm({ ...supplierForm, phone: e.target.value })} placeholder="+90 212..." /></div>
+                      <div className="space-y-2"><Label>E-posta</Label><Input type="email" value={supplierForm.email} onChange={e => setSupplierForm({ ...supplierForm, email: e.target.value })} placeholder="info@firma.com" /></div>
+                    </div>
+                    <div className="space-y-2"><Label>Adres</Label><Input value={supplierForm.address} onChange={e => setSupplierForm({ ...supplierForm, address: e.target.value })} placeholder="Adres" /></div>
+                    <div className="space-y-2"><Label>Notlar</Label><Input value={supplierForm.notes} onChange={e => setSupplierForm({ ...supplierForm, notes: e.target.value })} placeholder="Ek notlar" /></div>
+                    <Button onClick={handleAddSupplier} disabled={loading || !supplierForm.name.trim()} className="w-full">
                       {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}Kaydet
                     </Button>
                   </div>
@@ -338,15 +441,42 @@ export function AyarlarClient({ settings, profiles: initProfiles, suppliers: ini
                     <TableHead>Firma Adı</TableHead>
                     <TableHead>Telefon</TableHead>
                     <TableHead>E-posta</TableHead>
+                    <TableHead>Durum</TableHead>
+                    <TableHead className="text-right">İşlemler</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {suppliers.map(s => (
-                    <TableRow key={s.id}>
+                    <TableRow key={s.id} className={!s.is_active ? 'opacity-60' : ''}>
                       <TableCell className="font-mono">{s.code || '-'}</TableCell>
                       <TableCell className="font-medium">{s.name}</TableCell>
                       <TableCell>{s.phone || '-'}</TableCell>
                       <TableCell>{s.email || '-'}</TableCell>
+                      <TableCell>
+                        {s.is_active
+                          ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200" variant="outline">Aktif</Badge>
+                          : <Badge variant="secondary">Pasif</Badge>
+                        }
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex gap-1 justify-end">
+                          <Button variant="ghost" size="sm" title="Düzenle" onClick={() => openEditSupplier(s)}>
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          {s.is_active ? (
+                            <Button variant="ghost" size="sm" title="Pasif Et" onClick={() => handleDeleteSupplier(s)}>
+                              <UserX className="w-4 h-4 text-amber-600" />
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="sm" title="Aktif Et" onClick={() => handleActivateSupplier(s)}>
+                              <UserCheck className="w-4 h-4 text-emerald-500" />
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="sm" title="Kalıcı Sil" onClick={() => handlePermanentDeleteSupplier(s)}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -424,6 +554,30 @@ export function AyarlarClient({ settings, profiles: initProfiles, suppliers: ini
             <Button onClick={handleChangePassword} disabled={loading || newPassword.length < 6} className="w-full">
               {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Key className="w-4 h-4 mr-2" />}
               Şifreyi Güncelle
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Tedarikçi Düzenleme Modalı */}
+      <Dialog open={editSupplierOpen} onOpenChange={setEditSupplierOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Tedarikçi Düzenle: {selectedSupplier?.name}</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2"><Label>Firma Adı *</Label><Input value={editSupplierForm.name} onChange={e => setEditSupplierForm({ ...editSupplierForm, name: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Kod</Label><Input value={editSupplierForm.code} onChange={e => setEditSupplierForm({ ...editSupplierForm, code: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Yetkili Kişi</Label><Input value={editSupplierForm.contact_person} onChange={e => setEditSupplierForm({ ...editSupplierForm, contact_person: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Telefon</Label><Input value={editSupplierForm.phone} onChange={e => setEditSupplierForm({ ...editSupplierForm, phone: e.target.value })} /></div>
+              <div className="space-y-2"><Label>E-posta</Label><Input type="email" value={editSupplierForm.email} onChange={e => setEditSupplierForm({ ...editSupplierForm, email: e.target.value })} /></div>
+            </div>
+            <div className="space-y-2"><Label>Adres</Label><Input value={editSupplierForm.address} onChange={e => setEditSupplierForm({ ...editSupplierForm, address: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Notlar</Label><Input value={editSupplierForm.notes} onChange={e => setEditSupplierForm({ ...editSupplierForm, notes: e.target.value })} /></div>
+            <Button onClick={handleUpdateSupplier} disabled={loading || !editSupplierForm.name.trim()} className="w-full">
+              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Pencil className="w-4 h-4 mr-2" />}
+              Güncelle
             </Button>
           </div>
         </DialogContent>
